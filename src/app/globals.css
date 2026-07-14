@@ -1,0 +1,73 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: "Geist", "Geist Fallback", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) * .65);
+  --radius-md: calc(var(--radius) * .82);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.35);
+}
+
+:root {
+  --background: oklch(.985 .006 82);
+  --foreground: oklch(.22 .02 260);
+  --card: oklch(.998 .002 82);
+  --card-foreground: oklch(.22 .02 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(.22 .02 260);
+  --primary: oklch(.43 .16 266);
+  --primary-foreground: oklch(.99 0 0);
+  --secondary: oklch(.955 .018 260);
+  --secondary-foreground: oklch(.35 .08 264);
+  --muted: oklch(.965 .009 260);
+  --muted-foreground: oklch(.52 .025 260);
+  --accent: oklch(.945 .025 263);
+  --accent-foreground: oklch(.36 .13 266);
+  --destructive: oklch(.58 .21 27);
+  --border: oklch(.895 .014 260);
+  --input: oklch(.9 .014 260);
+  --ring: oklch(.54 .16 266);
+  --radius: .7rem;
+  --active: oklch(.52 .10 160);
+  --active-soft: oklch(.965 .028 155);
+  --uncertain: oklch(.62 .13 75);
+  --uncertain-soft: oklch(.975 .035 82);
+  --expired: oklch(.58 .015 260);
+}
+
+* { border-color: var(--border); }
+html { font-family: "Geist", "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif; }
+body { background: var(--background); color: var(--foreground); }
+button, a, input, textarea { outline-offset: 3px; }
+button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--ring); }
+::selection { background: oklch(.84 .07 265); }
+.hide-scrollbar { scrollbar-width: none; }
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.workspace-grid { grid-template-columns: minmax(250px, 24fr) minmax(320px, 32fr) minmax(500px, 44fr); }
+@media (max-width: 1100px) { .desktop-required { display: flex !important; } .desktop-app { display: none !important; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; } }
+.react-flow__attribution { display: none; }
+.react-flow__controls { box-shadow: none !important; border: 1px solid var(--border); overflow: hidden; border-radius: 8px; }
