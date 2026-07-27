@@ -21,7 +21,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol = requestHeaders.get("x-forwarded-proto") || (host.startsWith("localhost") ? "http" : "https");
   const image = `${protocol}://${host}/og.png`;
   const title = "RMW · Reasoning Memory Workspace";
-  const description = "Recover where your reasoning was—and why.";
+  const description = "Help university students frame research problems with evidence, AI collaboration, and interruption-resilient reasoning memory.";
   return {
     title,
     description,

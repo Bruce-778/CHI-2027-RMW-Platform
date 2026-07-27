@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
   Brain,
@@ -20,7 +20,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
+import { createInitialCards } from "@/lib/demo-data";
 import { eventLog } from "@/lib/event-log";
+import type { ResearchTaskId } from "@/lib/research-task";
 import type { EpistemicStatus, Locale } from "@/lib/rmw-types";
 
 type CaptureKind = "goal" | "hypothesis" | "evidence" | "constraint" | "path" | "next_action";
@@ -40,127 +42,46 @@ interface CaptureCard {
   reviewed: boolean;
 }
 
-const captureCards: CaptureCard[] = [
-  {
-    id: "main-goal",
-    kind: "goal",
-    goalLevel: "main",
-    content: { "zh-CN": "确定 AI Tutor 反馈的核心研究机制", en: "Define the core mechanism of AI tutor feedback" },
-    detail: { "zh-CN": "比较即时反馈、解释型反馈与元认知提示。", en: "Compare immediate, explanatory, and metacognitive feedback." },
-    status: "active",
-    priority: "pinned",
-    confidence: 94,
-    source: { "zh-CN": "研究备忘录第 1 段 + 聊天第 4、7 轮", en: "Memo paragraph 1 + chat turns 4 and 7" },
-    why: { "zh-CN": "它是当前所有子目标共同指向的唯一主线。", en: "It is the single goal shared by all active subgoals." },
-    reviewed: true,
-  },
-  {
-    id: "subgoal-mechanism",
-    kind: "goal",
-    goalLevel: "subgoal",
-    content: { "zh-CN": "比较三种反馈机制", en: "Compare three feedback mechanisms" },
-    detail: { "zh-CN": "当前活跃，已完成初步材料对照。", en: "Active; initial evidence comparison is complete." },
-    status: "active",
-    priority: "normal",
-    confidence: 91,
-    source: { "zh-CN": "材料 1、2、3", en: "Materials 1, 2, and 3" },
-    why: { "zh-CN": "这是主目标当前正在执行的分解步骤。", en: "This is the currently executing decomposition of the main goal." },
-    reviewed: true,
-  },
-  {
-    id: "subgoal-load",
-    kind: "goal",
-    goalLevel: "subgoal",
-    content: { "zh-CN": "验证高认知负荷下的效果", en: "Test the effect under high cognitive load" },
-    detail: { "zh-CN": "材料 2 给出冲突信号，需要回源。", en: "Material 2 gives a conflicting signal that needs verification." },
-    status: "uncertain",
-    priority: "normal",
-    confidence: 73,
-    source: { "zh-CN": "材料 2 + 聊天第 8 轮", en: "Material 2 + chat turn 8" },
-    why: { "zh-CN": "它决定解释型反馈能否进入最终 framing。", en: "It determines whether explanatory feedback belongs in the final framing." },
-    reviewed: false,
-  },
-  {
-    id: "subgoal-prior",
-    kind: "goal",
-    goalLevel: "subgoal",
-    content: { "zh-CN": "控制学习者先验知识差异", en: "Control for learner prior knowledge" },
-    detail: { "zh-CN": "需要转化为实验设计约束。", en: "Needs to become an explicit study constraint." },
-    status: "active",
-    priority: "normal",
-    confidence: 86,
-    source: { "zh-CN": "材料 1、4", en: "Materials 1 and 4" },
-    why: { "zh-CN": "忽略它会混淆反馈机制的效果。", en: "Ignoring it would confound the effect of feedback mechanism." },
-    reviewed: false,
-  },
-  {
-    id: "suspended-longitudinal",
-    kind: "goal",
-    goalLevel: "suspended",
-    content: { "zh-CN": "是否加入长期学习保持指标", en: "Whether to add a long-term retention measure" },
-    detail: { "zh-CN": "暂时不做，等核心机制稳定后再返回。", en: "Deferred until the core mechanism is stable." },
-    status: "active",
-    priority: "normal",
-    confidence: 82,
-    source: { "zh-CN": "聊天第 10 轮", en: "Chat turn 10" },
-    why: { "zh-CN": "它仍有价值，但现在展开会偏离主线。", en: "It remains useful, but pursuing it now would distract from the main line." },
-    reviewed: true,
-  },
-  {
-    id: "suspended-domain",
-    kind: "goal",
-    goalLevel: "suspended",
-    content: { "zh-CN": "是否扩展到一般知识工作", en: "Whether to generalize to knowledge work" },
-    detail: { "zh-CN": "当前研究先聚焦学习场景。", en: "The current study remains focused on learning." },
-    status: "active",
-    priority: "normal",
-    confidence: 79,
-    source: { "zh-CN": "研究备忘录第 3 段", en: "Memo paragraph 3" },
-    why: { "zh-CN": "保存分支，防止恢复后重复争论研究范围。", en: "Preserves the branch so scope is not debated again after resumption." },
-    reviewed: true,
-  },
-  {
-    id: "uncertain-hypothesis",
-    kind: "hypothesis",
-    content: { "zh-CN": "解释型反馈在高负荷下仍然有效", en: "Explanatory feedback remains effective under high load" },
-    detail: { "zh-CN": "系统推断，材料 2 反而提示可能增加负担。", en: "System-inferred; Material 2 instead suggests added burden." },
-    status: "uncertain",
-    priority: "normal",
-    confidence: 58,
-    source: { "zh-CN": "聊天第 8 轮；材料 2", en: "Chat turn 8; Material 2" },
-    why: { "zh-CN": "高影响且证据冲突，恢复后必须先核查。", en: "High-impact and source-conflicted; it must be verified before reuse." },
-    reviewed: false,
-  },
-  {
-    id: "rejected-speed",
-    kind: "path",
-    content: { "zh-CN": "只把 AI Tutor 定义为更快提供反馈", en: "Frame the AI tutor only as faster feedback" },
-    detail: { "zh-CN": "已排除：无法解释学习机制，也可能增加依赖。", en: "Rejected: it does not explain learning and may increase reliance." },
-    status: "expired",
-    priority: "normal",
-    confidence: 95,
-    source: { "zh-CN": "聊天第 5、9 轮", en: "Chat turns 5 and 9" },
-    why: { "zh-CN": "保存被排除路径，避免恢复后重复走回去。", en: "Keeps the rejected path visible so it is not repeated after interruption." },
-    reviewed: true,
-  },
-  {
-    id: "next-action",
-    kind: "next_action",
-    content: { "zh-CN": "先检查材料 2 的认知负荷证据", en: "First, check Material 2 for cognitive-load evidence" },
-    detail: { "zh-CN": "确认后再决定最终 research problem 的表述。", en: "Then decide how to frame the final research problem." },
-    status: "active",
-    priority: "pinned",
-    confidence: 92,
-    source: { "zh-CN": "聊天第 8 轮 + 当前阅读位置 p.6", en: "Chat turn 8 + current reading position p.6" },
-    why: { "zh-CN": "这是回来后最小、可立即执行且能解除不确定性的动作。", en: "This is the smallest executable action that resolves the key uncertainty." },
-    reviewed: false,
-  },
-];
+type ExtractedCard = Omit<CaptureCard, "content" | "detail" | "source" | "why" | "reviewed"> & {
+  content: string;
+  detail: string;
+  source: string;
+  why: string;
+};
+
+function createCaptureCards(taskId: ResearchTaskId): CaptureCard[] {
+  return createInitialCards(taskId).map((card) => {
+    const sourceLabels = card.sourceRefs.map((source) => source.label);
+    return {
+      id: card.id,
+      kind: card.cardType,
+      goalLevel: card.goalLevel,
+      content: card.content,
+      detail: card.detail,
+      status: card.status,
+      priority: card.priority,
+      confidence: card.confidence ?? 50,
+      source: {
+        "zh-CN": sourceLabels.length ? sourceLabels.join("、") : "系统候选；尚未定位到明确来源",
+        en: sourceLabels.length ? sourceLabels.join(", ") : "System candidate; no specific source located",
+      },
+      why: {
+        "zh-CN": card.cardType === "next_action"
+          ? "用于保存中断前准备执行的最小下一步；必须由你校准。"
+          : "从当前任务结构生成的低风险候选；只保留与你实际推理一致的内容。",
+        en: card.cardType === "next_action"
+          ? "Preserves the minimum action intended before interruption; participant calibration is required."
+          : "A low-risk candidate from the task structure; retain it only if it matches your actual reasoning.",
+      },
+      reviewed: false,
+    };
+  });
+}
 
 const labels = {
   "zh-CN": {
     title: "保存当前推理位置",
-    subtitle: "系统从聊天、材料、备忘录和操作轨迹中提取了候选状态。请在切换任务前快速校准。",
+    subtitle: "系统根据当前工作区生成候选状态。没有明确来源或置信度较低的卡片必须由你编辑、标记存疑或删除。",
     task: "主任务",
     save: "保存窗口",
     break: "中断任务",
@@ -195,7 +116,7 @@ const labels = {
   },
   en: {
     title: "Save your reasoning position",
-    subtitle: "The system extracted candidate state from chat, materials, memo, and interaction traces. Calibrate it before switching tasks.",
+    subtitle: "The system generated candidate state from the current workspace. Edit, mark uncertain, or remove cards with weak confidence or no specific source.",
     task: "Primary task",
     save: "Save window",
     break: "Interruption",
@@ -271,14 +192,69 @@ function GoalTile({ card, locale, selected, onClick }: { card: CaptureCard; loca
   );
 }
 
-export function RmwCheckpoint({ locale, onContinue }: { locale: Locale; onContinue: () => void }) {
+export function RmwCheckpoint({
+  locale,
+  taskId,
+  memo,
+  messages,
+  onContinue,
+}: {
+  locale: Locale;
+  taskId: ResearchTaskId;
+  memo: string;
+  messages: Array<{ role: "user" | "assistant"; text: string }>;
+  onContinue: () => void;
+}) {
   const t = labels[locale];
-  const [cards, setCards] = useState(captureCards);
-  const [selectedId, setSelectedId] = useState("next-action");
+  const [cards, setCards] = useState(() => createCaptureCards(taskId));
+  const [selectedId, setSelectedId] = useState("next");
+  const [extractionMode, setExtractionMode] = useState<"loading" | "live" | "demo" | "error">("loading");
   const [editing, setEditing] = useState(false);
   const selected = cards.find((card) => card.id === selectedId) || cards[0];
   const [draft, setDraft] = useState(selected.content[locale]);
   const reviewedCount = cards.filter((card) => card.reviewed).length;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const extract = async () => {
+      try {
+        const response = await fetch("/api/extract", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ locale, taskId, memo, messages }),
+          signal: controller.signal,
+        });
+        const result = await response.json() as { mode?: "live" | "demo"; cards?: ExtractedCard[]; error?: string };
+        if (!response.ok) throw new Error(result.error || "Extraction failed");
+        if (result.mode === "live" && Array.isArray(result.cards) && result.cards.length) {
+          const extracted = result.cards.map((card) => ({
+            ...card,
+            content: { "zh-CN": card.content, en: card.content },
+            detail: { "zh-CN": card.detail, en: card.detail },
+            source: { "zh-CN": card.source, en: card.source },
+            why: { "zh-CN": card.why, en: card.why },
+            reviewed: false,
+          }));
+          setCards(extracted);
+          const nextAction = extracted.find((card) => card.kind === "next_action");
+          const nextSelectedId = nextAction?.id || extracted[0].id;
+          setSelectedId(nextSelectedId);
+          setDraft((nextAction || extracted[0]).content[locale]);
+          setExtractionMode("live");
+          eventLog("checkpoint_extraction_completed", { taskId, mode: "live", cardCount: extracted.length }, { stage: "checkpoint" });
+          return;
+        }
+        setExtractionMode("demo");
+        eventLog("checkpoint_extraction_completed", { taskId, mode: "demo" }, { stage: "checkpoint" });
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setExtractionMode("error");
+        eventLog("checkpoint_extraction_failed", { taskId }, { stage: "checkpoint" });
+      }
+    };
+    void extract();
+    return () => controller.abort();
+  }, [locale, memo, messages, taskId]);
 
   const update = (id: string, patch: Partial<CaptureCard>, action: string) => {
     setCards((current) => current.map((card) => card.id === id ? { ...card, ...patch, reviewed: true } : card));
@@ -313,7 +289,7 @@ export function RmwCheckpoint({ locale, onContinue }: { locale: Locale; onContin
         <Timeline locale={locale} active="save" />
         <header className="flex items-end justify-between py-6">
           <div>
-            <Badge variant="secondary" className="mb-3"><Sparkle size={14} /> RMW save point</Badge>
+            <Badge variant="secondary" className="mb-3"><Sparkle size={14} /> RMW save point · {extractionMode === "live" ? "DeepSeek" : extractionMode === "loading" ? (locale === "zh-CN" ? "提取中" : "extracting") : (locale === "zh-CN" ? "中性候选" : "neutral candidates")}</Badge>
             <h1 className="text-3xl font-semibold tracking-tight">{t.title}</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{t.subtitle}</p>
           </div>
@@ -436,7 +412,7 @@ export function RmwCheckpoint({ locale, onContinue }: { locale: Locale; onContin
             <span><strong>{reviewedCount}/{cards.length}</strong> {t.reviewed} · {cards.filter((card) => card.priority === "pinned").length} pinned</span>
           </div>
           <Button className="h-11 px-6" onClick={() => {
-            eventLog("checkpoint_completed", { reviewedCount, totalCards: cards.length, pinnedCount: cards.filter((card) => card.priority === "pinned").length }, { stage: "checkpoint" });
+            eventLog("checkpoint_completed", { taskId, reviewedCount, totalCards: cards.length, pinnedCount: cards.filter((card) => card.priority === "pinned").length }, { stage: "checkpoint" });
             onContinue();
           }}>{t.saveAndBreak}<ArrowRight /></Button>
         </div>
