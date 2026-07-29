@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getResearchTask } from "@/lib/research-task";
 
 const requestSchema = z.object({
-  taskId: z.enum(["library", "waste", "bike"]),
+  taskId: z.literal("waste"),
   locale: z.enum(["zh-CN", "en"]).default("zh-CN"),
   memo: z.string().max(20000),
   messages: z.array(z.object({

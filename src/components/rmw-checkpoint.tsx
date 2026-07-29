@@ -18,6 +18,7 @@ import {
 } from "@phosphor-icons/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { TimedButton } from "@/components/timed-button";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { createInitialCards } from "@/lib/demo-data";
@@ -411,10 +412,10 @@ export function RmwCheckpoint({
             <Clock size={20} className="text-primary" />
             <span><strong>{reviewedCount}/{cards.length}</strong> {t.reviewed} · {cards.filter((card) => card.priority === "pinned").length} pinned</span>
           </div>
-          <Button className="h-11 px-6" onClick={() => {
+          <TimedButton seconds={6} locale={locale} label={t.saveAndBreak} className="h-11 px-6" onClick={() => {
             eventLog("checkpoint_completed", { taskId, reviewedCount, totalCards: cards.length, pinnedCount: cards.filter((card) => card.priority === "pinned").length }, { stage: "checkpoint" });
             onContinue();
-          }}>{t.saveAndBreak}<ArrowRight /></Button>
+          }} />
         </div>
       </div>
     </div>
@@ -481,10 +482,10 @@ export function InterruptionTask({ locale, onComplete }: { locale: Locale; onCom
               <p className="mt-2 text-sm text-muted-foreground">{t.accuracy}</p>
             </div>
           )}
-          <Button variant={complete ? "default" : "ghost"} className="mt-5 w-full" onClick={() => {
+          <TimedButton seconds={3} ready={complete} locale={locale} label={t.finish} blockedLabel={locale === "zh-CN" ? "请先完成全部 2-back 题目" : "Complete all 2-back trials first"} variant={complete ? "default" : "ghost"} className="mt-5 w-full" onClick={() => {
             eventLog("interruption_completed", { trialsAnswered: answered, correct, accuracy }, { stage: "interruption" });
             onComplete();
-          }}>{t.finish}<ArrowRight /></Button>
+          }} />
         </section>
       </div>
     </div>

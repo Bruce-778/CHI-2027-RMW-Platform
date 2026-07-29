@@ -1,6 +1,6 @@
 # RMW — Reasoning Memory Workspace
 
-A bilingual-interface, interruption-resilient research workspace for the CHI 2027 RMW study. Each participant is assigned one of three structurally matched urban-governance tasks (public libraries, waste sorting, or shared bikes), reads five Chinese experimental materials, collaborates with an evidence-grounded AI tutor, drafts a 600–900 Chinese-character memo, and recovers their reasoning after interruption.
+A bilingual, interruption-resilient research workspace for the CHI 2027 RMW study. Every participant completes the same urban waste-sorting governance task, reads five validated Chinese stimulus passages, collaborates with an evidence-grounded AI tutor, drafts a 600–900 Chinese-character memo, and recovers their reasoning after interruption.
 
 ## Run locally
 
@@ -9,22 +9,29 @@ pnpm install
 pnpm dev
 ```
 
-Open `http://localhost:3000`. Useful review routes:
+Open `http://localhost:3000`. Researcher review routes:
 
-- `/` — participant entry and full demo flow
-- `/?view=topics` — assigned-task reveal (participants cannot self-select)
-- `/?view=task` — Phase 1 and final memo requirements
-- `/?view=work&task=library` — Phase 1 library task
-- `/?view=work&task=waste` — Phase 1 waste-sorting task
-- `/?view=work&task=bike` — Phase 1 shared-bike task
-- `/?view=checkpoint` — pre-interruption prospective encoding and card calibration
+- `/` — participant entry and complete experiment flow
+- `/?view=task` — task brief and memo requirements
+- `/?view=work` — Phase 1 workspace and spotlight onboarding
+- `/?view=checkpoint` — pre-interruption reasoning-state calibration
 - `/?view=interruption` — 2-back interruption task
-- `/?view=day2` — Day 2 RMW workspace
-- `/?view=day2&condition=summary&lang=en` — English Auto Summary condition
 - `/?view=recall` — unsupported recall gate
+- `/?view=day2` — RMW recovery workspace
+- `/?view=day2&condition=summary&lang=en` — English Auto Summary condition
 - `/admin` — researcher console
 
-The `task` query parameter is for researcher review only. The participant flow deterministically assigns a task from the anonymous participant code and does not expose a topic chooser. The deployed preview runs without secrets and stores demo interaction events in browser local storage. Configure `.env.local` from `.env.example` to enable DeepSeek and Supabase.
+The participant entry does not expose review shortcuts or a topic selector. Primary page transitions use short countdown gates, and required-response pages remain locked until all items are complete.
+
+## Pre-task measures
+
+The pre-task page contains three constructs, each measured by multiple clickable 5-point items:
+
+1. AI use and evaluation: a task-specific short-form adaptation informed by the Use and Evaluation dimensions of the [Artificial Intelligence Literacy Scale](https://doi.org/10.1080/0144929X.2022.2072768).
+2. Research-task self-efficacy: task-specific items informed by the conceptualization and research-design dimensions of the [Research Self-Efficacy Scale](https://doi.org/10.1177/106907279600400104) and [Self-Efficacy in Research Measure](https://doi.org/10.1177/07342829231204507).
+3. Prior topic familiarity: researcher-authored covariate items for the waste-sorting task.
+
+These are adaptations for this experimental context, not the original validated scales or their original scoring systems. The task-specific wording and 5-point response format must be piloted and reported as adapted measures.
 
 ## DeepSeek
 
@@ -36,31 +43,26 @@ DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-flash
 ```
 
-Without `DEEPSEEK_API_KEY`, the tutor remains usable in scripted demo mode and the checkpoint uses neutral, low-confidence calibration candidates. It never inserts the researcher's answer key. In Vercel, add these values under Project Settings → Environment Variables and redeploy.
+Without `DEEPSEEK_API_KEY`, the tutor remains usable in scripted demo mode and the checkpoint uses neutral, low-confidence calibration candidates. It never inserts a researcher answer key. In Vercel, add the values under Project Settings → Environment Variables and redeploy.
 
-## Experimental-task controls
+## Experimental controls
 
-- Participant-facing code contains only the 15 stimulus passages and shared instructions. Researcher-only design annotations are intentionally excluded.
-- All tasks use the same Phase 1 goals, memo questions, AI prompt version, temperature, and checkpoint schema.
+- Participant-facing code contains one question and five waste-sorting stimulus passages.
 - The English interface does not translate the validated Chinese stimulus paragraphs; an unpiloted translation must not become another task condition.
-- The pre-survey records familiarity with the assigned topic as a covariate.
-- Before the main study, pilot all three packs for subjective difficulty, number of framings identified, fragile-statistic detection, rejected-path identification, and prior familiarity. If the packs cannot be balanced, use one pack in the main study and move the others to tutorial/practice.
+- The former standalone tutorial page is replaced by a four-step spotlight guide over the live workspace.
+- The guide introduces materials, AI chat, memo, and Phase 1 goals in sequence and can be reopened from Help.
+- AI prompts require material-number backlinks and separation of evidence, inference, and uncertainty.
+- Participant interactions, survey choices, countdown-gated transitions, tour steps, chat, memo edits, and card calibration actions are logged as events.
 
-## Implemented RMW study loop
+## Implemented RMW loop
 
-The demo now follows one closed-loop interruption protocol:
+1. Read the task brief and complete the three-construct pre-task measure.
+2. Follow the spotlight guide, read five materials, compare framings with AI, and write the memo.
+3. Extract and calibrate the candidate goal hierarchy, uncertain hypothesis, rejected path, and minimum next action.
+4. Complete the 2-back interruption task.
+5. Complete unsupported recall before recovery support is revealed.
+6. Resume from a minimal brief, reasoning cards, source backlinks, and knowledge network.
 
-1. Extract candidate problem state from chat, materials, memo, and interaction traces.
-2. Ask the participant to calibrate the main goal, 2–4 active subgoals, suspended goals, an uncertain hypothesis, a rejected path, and one minimum next action.
-3. Preserve provenance, extraction confidence, epistemic status, and per-card actions (`Accept`, `Edit`, `Pin`, `Uncertain`, `Expire`).
-4. Run a short 2-back interruption task.
-5. Collect unsupported recall before revealing recovery support.
-6. Resume with a minimal brief first, then the full goal hierarchy, reasoning cards, source backlinks, and knowledge network.
-
-The researcher console can export the local demo event stream as JSON. The production schema in `supabase/migrations/202607140001_initial_schema.sql` includes server-mediated sessions, extraction runs, cards, sources, relations, recovery artifacts, recall responses, and sequenced events.
+The researcher console can export the local demo event stream as JSON. The production schema in `supabase/migrations/202607140001_initial_schema.sql` uses RLS and revokes direct participant access because traffic is server-mediated. Never expose a Supabase secret or LLM API key to the browser.
 
 Use `pnpm sites:build` to produce the edge-deployable bundle in `dist/`.
-
-## Data and security
-
-The initial Supabase schema is in `supabase/migrations/202607140001_initial_schema.sql`. Tables use RLS and revoke `anon`/`authenticated` access because participant traffic is server-mediated. Never expose the Supabase secret key or LLM API key to the browser.

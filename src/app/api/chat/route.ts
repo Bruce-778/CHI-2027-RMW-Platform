@@ -5,7 +5,7 @@ import { getResearchTask } from "@/lib/research-task";
 const bodySchema = z.object({
   messages: z.array(z.object({ role: z.enum(["user","assistant"]), content: z.string().min(1).max(8000) })).min(1).max(60),
   locale: z.enum(["zh-CN","en"]).default("zh-CN"),
-  taskId: z.enum(["library","waste","bike"]).default("library"),
+  taskId: z.literal("waste").default("waste"),
 });
 
 const completionSchema=z.object({
@@ -54,7 +54,7 @@ ${evidencePack}`;
       content: locale === "zh-CN"
         ? `当前是无 API Key 的演示模式。请先写出两个相互竞争的解释，并为每个解释标出至少一段材料编号（例如 [材料 ${task.code}1]）。然后说明：哪一条是材料直接支持的证据，哪一条仍只是需要验证的推断？`
         : `This preview has no API key. Start with two competing explanations and cite at least one material for each (for example, [Material ${task.code}1]). Then distinguish direct evidence from an inference that still needs testing.`,
-      promptVersion: "three_isomorphic_tasks_v1",
+      promptVersion: "single_waste_task_v1",
     });
   }
   try{
@@ -73,7 +73,7 @@ ${evidencePack}`;
     if(!completion.success||!completion.data.choices[0].message.content){
       return NextResponse.json({error:"Invalid DeepSeek response"},{status:502});
     }
-    return NextResponse.json({ mode:"live", provider:"deepseek", model, promptVersion:"three_isomorphic_tasks_v1", content:completion.data.choices[0].message.content });
+    return NextResponse.json({ mode:"live", provider:"deepseek", model, promptVersion:"single_waste_task_v1", content:completion.data.choices[0].message.content });
   }catch{
     return NextResponse.json({error:"DeepSeek request failed"},{status:502});
   }
