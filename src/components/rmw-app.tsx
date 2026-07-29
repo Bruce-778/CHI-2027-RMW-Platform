@@ -10,6 +10,7 @@ import {
 import { Background, Controls, Handle, Position, ReactFlow, type Edge, type Node } from "@xyflow/react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -32,7 +33,7 @@ type ChatMessage = { role: "user" | "assistant"; text: string };
 const copy = {
   "zh-CN": {
     study: "大学生科研思考与恢复研究", consent: "我已阅读并同意参与研究",
-    anonymous: "匿名登入", enter: "开始研究", language: "界面语言",
+    anonymous: "匿名登入", anonymousPlaceholder: "请输入匿名编号", enter: "开始研究", language: "界面语言",
     pretitle: "开始前，先了解你的经验", next: "继续", back: "返回",
     materials: "材料", chat: "AI 助手", memo: "研究备忘录", recovery: "推理恢复支持",
     day: "Day 2 · 恢复阶段", saved: "已保存", help: "帮助", progress: "阅读进度",
@@ -48,7 +49,7 @@ const copy = {
   },
   en: {
     study: "Student Research Framing & Recovery Study", consent: "I have read the information and agree to participate",
-    anonymous: "Anonymous login", enter: "Start study", language: "Interface language",
+    anonymous: "Anonymous login", anonymousPlaceholder: "Enter an anonymous ID", enter: "Start study", language: "Interface language",
     pretitle: "A few questions about your experience", next: "Continue", back: "Back",
     materials: "Materials", chat: "AI assistant", memo: "Research memo", recovery: "Reasoning recovery",
     day: "Day 2 · Resume", saved: "Saved", help: "Help", progress: "Reading progress",
@@ -135,14 +136,16 @@ function Landing({
   t: typeof copy[Locale];
 }) {
   const [consent, setConsent] = useState(true);
+  const [anonymousId, setAnonymousId] = useState("");
   return <div className="min-h-screen bg-[#f8f7f3]">
     <header className="mx-auto flex h-20 max-w-6xl items-center justify-between px-8"><Brand /><LanguageChoice locale={locale} setLocale={setLocale} /></header>
     <section className="mx-auto grid max-w-6xl grid-cols-[1.08fr_.92fr] items-center gap-16 px-8 py-20">
       <div><h1 className="max-w-xl text-[54px] font-semibold leading-[1.08] tracking-[-.04em]">{t.study}</h1></div>
       <div className="rounded-2xl border bg-white/90 p-8 shadow-[0_24px_70px_rgba(34,42,70,.10)] backdrop-blur">
-        <h2 className="text-xl font-semibold">{t.anonymous}</h2>
+        <label className="text-sm font-semibold" htmlFor="anonymous-id">{t.anonymous}</label>
+        <Input id="anonymous-id" autoComplete="off" value={anonymousId} onChange={event=>setAnonymousId(event.target.value)} placeholder={t.anonymousPlaceholder} className="mt-3 h-12" />
         <label className="mt-7 flex cursor-pointer items-start gap-3 text-sm leading-6"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} className="mt-1 size-4 accent-[var(--primary)]"/><span>{t.consent}</span></label>
-        <TimedButton seconds={5} ready={consent} locale={locale} label={t.enter} blockedLabel={locale==="zh-CN"?"请先勾选同意":"Provide consent to continue"} onClick={()=>{eventLog("consent_submitted",{locale,access:"anonymous"});onStart()}} className="mt-7 h-12 w-full" />
+        <TimedButton seconds={5} ready={consent&&Boolean(anonymousId.trim())} locale={locale} label={t.enter} blockedLabel={locale==="zh-CN"?"请填写匿名编号并勾选同意":"Enter an anonymous ID and provide consent"} onClick={()=>{eventLog("consent_submitted",{locale,access:"anonymous",anonymousId:anonymousId.trim().slice(0,64)});onStart()}} className="mt-7 h-12 w-full" />
         <p className="mt-3 text-center text-[11px] text-muted-foreground">{locale==="zh-CN"?"按钮将在阅读时间结束且信息完整后开放。":"The button unlocks after the reading time and required fields are complete."}</p>
       </div>
     </section>
