@@ -159,8 +159,11 @@ function TaskBrief({locale,taskId,setScreen}:{locale:Locale;taskId:ResearchTaskI
     <p className="mt-5 text-lg font-semibold leading-8">{task.question[locale]}</p>
     <p className="mt-4 rounded-xl bg-secondary/55 p-4 text-sm leading-7 text-secondary-foreground">{taskOverview[locale]}</p>
     <div className="mt-6">
-      <h2 className="text-sm font-semibold">{locale==="zh-CN"?"第一阶段结束时，你不需要完成最终 memo，但应尽量：":"By the end of Phase 1, you do not need a final memo, but should try to:"}</h2>
-      <div className="mt-3 space-y-2">{phaseOneGoals.map((goal,index)=><div key={goal[locale]} className="flex gap-3 rounded-lg border bg-white px-3 py-2.5 text-sm leading-6"><span className="grid size-6 shrink-0 place-items-center rounded-full bg-secondary text-xs font-semibold text-primary">{index+1}</span>{goal[locale]}</div>)}</div>
+      <h2 className="text-sm font-semibold">{locale==="zh-CN"?"第一阶段包含 3 个目标，每个目标有多个评价点：":"Phase 1 contains three goals, each with multiple evaluation criteria:"}</h2>
+      <div className="mt-3 space-y-3">{phaseOneGoals.map((goal,index)=><section key={goal.id} className="rounded-xl border bg-white p-4">
+        <div className="flex items-center gap-3"><span className="grid size-7 shrink-0 place-items-center rounded-full bg-secondary text-xs font-semibold text-primary">{index+1}</span><h3 className="text-sm font-semibold">{goal.title[locale]}</h3></div>
+        <ul className="ml-10 mt-3 space-y-2 text-xs leading-5 text-muted-foreground">{goal.criteria.map(criterion=><li key={criterion[locale]} className="flex gap-2"><span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary/55"/><span>{criterion[locale]}</span></li>)}</ul>
+      </section>)}</div>
     </div>
     <div className="mt-7 border-t pt-6">
       <h2 className="text-sm font-semibold">{locale==="zh-CN"?"最终 memo（600–900 字）需回答：":"The final memo (600–900 words) should answer:"}</h2>
@@ -455,22 +458,32 @@ function MemoPanel({locale,memo,setMemo,t}:{locale:Locale;memo:string;setMemo:(s
 
 function PhaseOnePanel({locale,taskId,memo,setScreen}:{locale:Locale;taskId:ResearchTaskId;memo:string;setScreen:(screen:Screen)=>void}) {
   const task=getResearchTask(taskId);
-  const [completed,setCompleted]=useState<Set<number>>(()=>new Set());
-  const toggleGoal=(index:number)=>setCompleted(current=>{
+  const [completed,setCompleted]=useState<Set<string>>(()=>new Set());
+  const criterionId=(goalId:string,index:number)=>`${goalId}:${index}`;
+  const toggleCriterion=(goalId:string,index:number)=>setCompleted(current=>{
+    const id=criterionId(goalId,index);
     const next=new Set(current);
-    if(next.has(index))next.delete(index);else next.add(index);
-    eventLog("phase_goal_toggled",{taskId,index,completed:!current.has(index)},{stage:"research_work"});
+    if(next.has(id))next.delete(id);else next.add(id);
+    eventLog("phase_criterion_toggled",{taskId,goalId,criterionIndex:index,completed:!current.has(id)},{stage:"research_work"});
     return next;
   });
+  const completedGoalCount=phaseOneGoals.filter(goal=>goal.criteria.every((_,index)=>completed.has(criterionId(goal.id,index)))).length;
+  const totalCriteria=phaseOneGoals.reduce((total,goal)=>total+goal.criteria.length,0);
   const memoCount=locale==="zh-CN"?memo.replace(/\s/g,"").length:(memo.trim()?memo.trim().split(/\s+/).length:0);
   return <section data-tour="goals" className="flex min-h-0 flex-col bg-[#fbfcfe]">
-    <div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><Target size={20} className="text-primary"/>{locale==="zh-CN"?"第一阶段目标":"Phase 1 goals"}</h2><Badge variant="outline" className="bg-white text-[10px]">{completed.size} / {phaseOneGoals.length}</Badge></div>
+    <div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><Target size={20} className="text-primary"/>{locale==="zh-CN"?"第一阶段目标":"Phase 1 goals"}</h2><Badge variant="outline" className="bg-white text-[10px]">{completedGoalCount} / {phaseOneGoals.length} {locale==="zh-CN"?"个目标":"goals"}</Badge></div>
     <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
       <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4"><p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-700">{task.label[locale]} · Research question</p><p className="mt-2 text-sm font-semibold leading-6 text-indigo-950">{task.question[locale]}</p></div>
-      <div className="mt-4 space-y-2">{phaseOneGoals.map((goal,index)=><label key={goal[locale]} className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 text-xs leading-5 transition ${completed.has(index)?"border-emerald-200 bg-emerald-50/60":"bg-white"}`}><input type="checkbox" checked={completed.has(index)} onChange={()=>toggleGoal(index)} className="mt-0.5 size-4 accent-[var(--active)]"/><span>{goal[locale]}</span></label>)}</div>
+      <div className="mt-4 space-y-3">{phaseOneGoals.map((goal,index)=><section key={goal.id} className={`rounded-xl border p-3 transition ${goal.criteria.every((_,criterionIndex)=>completed.has(criterionId(goal.id,criterionIndex)))?"border-emerald-200 bg-emerald-50/45":"bg-white"}`}>
+        <div className="flex items-center gap-2"><span className="grid size-6 shrink-0 place-items-center rounded-full bg-secondary text-[10px] font-semibold text-primary">{index+1}</span><h3 className="text-xs font-semibold">{goal.title[locale]}</h3></div>
+        <div className="ml-8 mt-2 space-y-1.5">{goal.criteria.map((criterion,criterionIndex)=>{
+          const id=criterionId(goal.id,criterionIndex);
+          return <label key={id} className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-[11px] leading-4 hover:bg-muted/50"><input type="checkbox" checked={completed.has(id)} onChange={()=>toggleCriterion(goal.id,criterionIndex)} className="mt-0.5 size-3.5 accent-[var(--active)]"/><span>{criterion[locale]}</span></label>;
+        })}</div>
+      </section>)}</div>
       <details className="mt-4 rounded-xl border bg-white p-4"><summary className="cursor-pointer text-xs font-semibold">{locale==="zh-CN"?"查看最终 memo 的 6 个问题":"View the six final-memo questions"}</summary><ol className="mt-3 space-y-2 text-xs leading-5 text-muted-foreground">{memoQuestions.map((question,index)=><li key={question[locale]}>{index+1}. {question[locale]}</li>)}</ol></details>
     </div>
-    <div className="shrink-0 border-t bg-white px-5 py-3"><div className="mb-2 flex justify-between text-[10px] text-muted-foreground"><span>{locale==="zh-CN"?"当前 memo":"Current memo"}</span><span>{memoCount} {locale==="zh-CN"?"字":"words"}</span></div><TimedButton seconds={10} locale={locale} label={locale==="zh-CN"?"保存推理位置并进入中断任务":"Save reasoning position and begin interruption"} className="h-11 w-full text-sm" onClick={()=>{eventLog("phase_one_checkpoint_requested",{taskId,completedGoals:completed.size,memoCount},{stage:"research_work"});setScreen("checkpoint")}} /></div>
+    <div className="shrink-0 border-t bg-white px-5 py-3"><div className="mb-2 flex justify-between text-[10px] text-muted-foreground"><span>{locale==="zh-CN"?"当前 memo":"Current memo"}</span><span>{memoCount} {locale==="zh-CN"?"字":"words"} · {completed.size}/{totalCriteria} {locale==="zh-CN"?"评价点":"criteria"}</span></div><TimedButton seconds={10} locale={locale} label={locale==="zh-CN"?"保存推理位置并进入中断任务":"Save reasoning position and begin interruption"} className="h-11 w-full text-sm" onClick={()=>{eventLog("phase_one_checkpoint_requested",{taskId,completedGoals:completedGoalCount,completedCriteria:completed.size,totalCriteria,memoCount},{stage:"research_work"});setScreen("checkpoint")}} /></div>
   </section>;
 }
 

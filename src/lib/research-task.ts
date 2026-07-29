@@ -2,6 +2,11 @@ import type { Locale } from "./rmw-types";
 
 export type ResearchTaskId = "waste";
 export type LocalizedText = Record<Locale, string>;
+export type PhaseOneGoal = {
+  id: string;
+  title: LocalizedText;
+  criteria: LocalizedText[];
+};
 
 export type ResearchMaterial = {
   id: string;
@@ -80,12 +85,34 @@ export const researchTask: ResearchTask = {
 
 export const researchTasks: ResearchTask[] = [researchTask];
 
-export const phaseOneGoals: LocalizedText[] = [
-  { "zh-CN": "比较至少两个可能的问题框架", en: "Compare at least two possible problem framings" },
-  { "zh-CN": "形成至少两个假设", en: "Form at least two hypotheses" },
-  { "zh-CN": "明确至少一个仍需验证的不确定点", en: "Identify at least one uncertainty that still needs verification" },
-  { "zh-CN": "排除至少一个你认为不可行的方向", en: "Rule out at least one direction you consider infeasible" },
-  { "zh-CN": "规划下一步要做什么", en: "Plan the next action" },
+export const phaseOneGoals: PhaseOneGoal[] = [
+  {
+    id: "problem-framing",
+    title: { "zh-CN": "目标一：比较并界定问题框架", en: "Goal 1: Compare and define problem framings" },
+    criteria: [
+      { "zh-CN": "比较至少两个可能的问题框架", en: "Compare at least two possible problem framings" },
+      { "zh-CN": "说明每个框架的材料依据和核心差异", en: "State the material basis and central difference for each framing" },
+      { "zh-CN": "排除至少一个不可行方向，并说明理由", en: "Rule out at least one infeasible direction and explain why" },
+    ],
+  },
+  {
+    id: "hypotheses",
+    title: { "zh-CN": "目标二：形成可验证的解释", en: "Goal 2: Develop testable explanations" },
+    criteria: [
+      { "zh-CN": "形成至少两个可验证的假设", en: "Form at least two testable hypotheses" },
+      { "zh-CN": "区分材料证据、你的推断与假设", en: "Distinguish material evidence, your inference, and hypotheses" },
+      { "zh-CN": "明确至少一个仍需验证的不确定点", en: "Identify at least one uncertainty that still needs verification" },
+    ],
+  },
+  {
+    id: "next-step",
+    title: { "zh-CN": "目标三：规划下一步验证", en: "Goal 3: Plan the next validation step" },
+    criteria: [
+      { "zh-CN": "提出一个符合现实约束的最小下一步", en: "Propose one minimum next step that respects real-world constraints" },
+      { "zh-CN": "说明需要收集的数据或证据", en: "Specify the data or evidence that should be collected" },
+      { "zh-CN": "说明如何判断假设得到支持或被否定", en: "Explain how the hypothesis would be supported or rejected" },
+    ],
+  },
 ];
 
 export const memoQuestions: LocalizedText[] = [
