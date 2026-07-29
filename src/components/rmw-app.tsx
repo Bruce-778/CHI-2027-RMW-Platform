@@ -4,13 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight, BookOpenText, Brain, Check, CheckCircle, Clock,
   Globe, Question, LinkSimple,
-  NotePencil, PaperPlaneTilt, PauseCircle, PushPin, ShieldCheck, Sparkle,
+  NotePencil, PaperPlaneTilt, PauseCircle, PushPin, Sparkle,
   SquaresFour, Target, Timer, WarningCircle, XCircle,
 } from "@phosphor-icons/react";
 import { Background, Controls, Handle, Position, ReactFlow, type Edge, type Node } from "@xyflow/react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -32,10 +31,8 @@ type ChatMessage = { role: "user" | "assistant"; text: string };
 
 const copy = {
   "zh-CN": {
-    study: "大学生科研思考与恢复研究", intro: "阅读材料、与 AI 比较问题框架，并在中断后准确找回你的科研思路。",
-    privacy: "研究会记录聊天、编辑与界面操作。请勿输入真实敏感信息。所有导出数据使用匿名编号。",
-    code: "参与者代码", codeHint: "演示代码：RMW-DEMO", consent: "我已阅读并同意参与研究",
-    enter: "开始研究", language: "界面语言",
+    study: "大学生科研思考与恢复研究", consent: "我已阅读并同意参与研究",
+    anonymous: "匿名登入", enter: "开始研究", language: "界面语言",
     pretitle: "开始前，先了解你的经验", next: "继续", back: "返回",
     materials: "材料", chat: "AI 助手", memo: "研究备忘录", recovery: "推理恢复支持",
     day: "Day 2 · 恢复阶段", saved: "已保存", help: "帮助", progress: "阅读进度",
@@ -50,10 +47,8 @@ const copy = {
     desktop: "请使用桌面设备", desktopText: "为了保证实验条件一致，本研究需要至少 1100px 宽的桌面浏览器。",
   },
   en: {
-    study: "Student Research Framing & Recovery Study", intro: "Read evidence, compare research framings with AI, and recover your reasoning accurately after interruption.",
-    privacy: "The study records chat, edits, and interface actions. Do not enter sensitive information. Exports use anonymous IDs.",
-    code: "Participant code", codeHint: "Demo code: RMW-DEMO", consent: "I have read the information and agree to participate",
-    enter: "Start study", language: "Interface language",
+    study: "Student Research Framing & Recovery Study", consent: "I have read the information and agree to participate",
+    anonymous: "Anonymous login", enter: "Start study", language: "Interface language",
     pretitle: "A few questions about your experience", next: "Continue", back: "Back",
     materials: "Materials", chat: "AI assistant", memo: "Research memo", recovery: "Reasoning recovery",
     day: "Day 2 · Resume", saved: "Saved", help: "Help", progress: "Reading progress",
@@ -73,7 +68,6 @@ export function RmwApp() {
   const [locale, setLocale] = useState<Locale>("zh-CN");
   const [screen, setScreen] = useState<Screen>("landing");
   const [condition, setCondition] = useState<Condition>("rmw");
-  const [participantCode, setParticipantCode] = useState("RMW-DEMO");
   const taskId: ResearchTaskId = "waste";
   const [memo, setMemo] = useState(() => getResearchTask("waste").starterMemo["zh-CN"]);
   const [chat, setChat] = useState<ChatMessage[]>(() => [{ role: "assistant", text: getResearchTask("waste").assistantIntro["zh-CN"] }]);
@@ -103,7 +97,7 @@ export function RmwApp() {
         <div className="max-w-md"><SquaresFour size={42} className="mx-auto mb-5 text-primary" /><h1 className="text-2xl font-semibold">{t.desktop}</h1><p className="mt-3 text-muted-foreground">{t.desktopText}</p></div>
       </div>
       <main className="desktop-app min-h-screen">
-        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantCode={participantCode} setParticipantCode={setParticipantCode} onStart={() => {
+        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} onStart={() => {
           const task = getResearchTask("waste");
           setMemo(task.starterMemo[locale]);
           setChat([{ role: "assistant", text: task.assistantIntro[locale] }]);
@@ -132,15 +126,11 @@ function LanguageChoice({ locale, setLocale }: { locale: Locale; setLocale: (l: 
 function Landing({
   locale,
   setLocale,
-  participantCode,
-  setParticipantCode,
   onStart,
   t,
 }: {
   locale: Locale;
   setLocale: (l: Locale) => void;
-  participantCode: string;
-  setParticipantCode: (code: string) => void;
   onStart: () => void;
   t: typeof copy[Locale];
 }) {
@@ -148,13 +138,11 @@ function Landing({
   return <div className="min-h-screen bg-[#f8f7f3]">
     <header className="mx-auto flex h-20 max-w-6xl items-center justify-between px-8"><Brand /><LanguageChoice locale={locale} setLocale={setLocale} /></header>
     <section className="mx-auto grid max-w-6xl grid-cols-[1.08fr_.92fr] items-center gap-16 px-8 py-20">
-      <div><Badge variant="secondary" className="mb-6 rounded-full px-3 py-1 text-primary"><Brain size={15} /> CHI 2027 Research Prototype</Badge><h1 className="max-w-xl text-[54px] font-semibold leading-[1.08] tracking-[-.04em]">{t.study}</h1><p className="mt-6 max-w-xl text-xl leading-8 text-muted-foreground">{t.intro}</p>
-        <div className="mt-10 grid max-w-xl grid-cols-3 gap-5">{[[Target,"恢复目标","Recover goals"],[LinkSimple,"检查证据","Check evidence"],[ArrowRight,"继续下一步","Resume action"]].map(([I,zh,en]) => { const Icon=I as typeof Target; return <div key={String(zh)} className="border-t pt-4"><Icon size={23} className="mb-3 text-primary"/><p className="text-sm font-medium">{locale === "zh-CN" ? String(zh) : String(en)}</p></div>})}</div>
-      </div>
-      <div className="rounded-2xl border bg-white/90 p-8 shadow-[0_24px_70px_rgba(34,42,70,.10)] backdrop-blur"><div className="mb-6 flex items-center gap-3"><ShieldCheck size={25} className="text-[var(--active)]"/><div><h2 className="font-semibold">{t.enter}</h2><p className="text-sm text-muted-foreground">Session access is anonymous</p></div></div>
-        <label className="text-sm font-medium">{t.code}</label><Input value={participantCode} onChange={e=>setParticipantCode(e.target.value)} className="mt-2 h-12" /><p className="mt-2 text-xs text-muted-foreground">{t.codeHint}</p>
-        <label className="mt-6 flex cursor-pointer items-start gap-3 text-sm leading-6"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} className="mt-1 size-4 accent-[var(--primary)]"/><span>{t.consent}</span></label><p className="mt-4 rounded-lg bg-muted/70 p-4 text-xs leading-5 text-muted-foreground">{t.privacy}</p>
-        <TimedButton seconds={5} ready={consent && Boolean(participantCode.trim())} locale={locale} label={t.enter} blockedLabel={locale==="zh-CN"?"请填写代码并勾选同意":"Enter a code and provide consent"} onClick={()=>{eventLog("consent_submitted",{locale});onStart()}} className="mt-6 h-12 w-full" />
+      <div><h1 className="max-w-xl text-[54px] font-semibold leading-[1.08] tracking-[-.04em]">{t.study}</h1></div>
+      <div className="rounded-2xl border bg-white/90 p-8 shadow-[0_24px_70px_rgba(34,42,70,.10)] backdrop-blur">
+        <h2 className="text-xl font-semibold">{t.anonymous}</h2>
+        <label className="mt-7 flex cursor-pointer items-start gap-3 text-sm leading-6"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} className="mt-1 size-4 accent-[var(--primary)]"/><span>{t.consent}</span></label>
+        <TimedButton seconds={5} ready={consent} locale={locale} label={t.enter} blockedLabel={locale==="zh-CN"?"请先勾选同意":"Provide consent to continue"} onClick={()=>{eventLog("consent_submitted",{locale,access:"anonymous"});onStart()}} className="mt-7 h-12 w-full" />
         <p className="mt-3 text-center text-[11px] text-muted-foreground">{locale==="zh-CN"?"按钮将在阅读时间结束且信息完整后开放。":"The button unlocks after the reading time and required fields are complete."}</p>
       </div>
     </section>
