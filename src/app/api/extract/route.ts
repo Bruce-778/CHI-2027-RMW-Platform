@@ -25,7 +25,29 @@ const cardSchema = z.object({
   why: z.string().min(1).max(1000),
 });
 
-const extractionSchema = z.object({ cards: z.array(cardSchema).min(6).max(12) });
+const relationSchema = z.object({
+  id: z.string().min(1).max(80),
+  sourceCardId: z.string().min(1).max(80),
+  targetCardId: z.string().min(1).max(80),
+  relationType: z.enum(["supports", "challenges", "constrains", "rejects", "leads_to"]),
+  confidence: z.number().min(0).max(100),
+});
+
+const extractionSchema = z.object({
+  cards: z.array(cardSchema).min(6).max(12),
+  relations: z.array(relationSchema).min(4).max(20),
+}).superRefine((value, context) => {
+  const cardIds = new Set(value.cards.map((card) => card.id));
+  value.relations.forEach((relation, index) => {
+    if (!cardIds.has(relation.sourceCardId) || !cardIds.has(relation.targetCardId)) {
+      context.addIssue({
+        code: "custom",
+        path: ["relations", index],
+        message: "Relation references a missing card",
+      });
+    }
+  });
+});
 
 const completionSchema = z.object({
   choices: z.array(z.object({
@@ -51,7 +73,7 @@ export async function POST(request: Request) {
   if (!apiKey) {
     return NextResponse.json({
       mode: "demo",
-      promptVersion: "rmw_state_extraction_v1",
+      promptVersion: "rmw_state_and_network_extraction_v2",
       message: "No server-side DeepSeek key; neutral calibration candidates remain in use.",
     });
   }
@@ -62,7 +84,7 @@ export async function POST(request: Request) {
   const systemPrompt = `You extract a participant's prospective reasoning state immediately before an interruption.
 
 Return JSON only, with this shape:
-{"cards":[{"id":"...","kind":"goal|hypothesis|evidence|constraint|path|next_action","goalLevel":"main|subgoal|suspended","content":"...","detail":"...","status":"active|uncertain|expired","priority":"normal|pinned","confidence":0,"source":"...","why":"..."}]}
+{"cards":[{"id":"...","kind":"goal|hypothesis|evidence|constraint|path|next_action","goalLevel":"main|subgoal|suspended","content":"...","detail":"...","status":"active|uncertain|expired","priority":"normal|pinned","confidence":0,"source":"...","why":"..."}],"relations":[{"id":"...","sourceCardId":"...","targetCardId":"...","relationType":"supports|challenges|constrains|rejects|leads_to","confidence":0}]}
 
 Rules:
 - Write all card text in ${outputLanguage}.
@@ -72,7 +94,11 @@ Rules:
 - A rejected path may be status "expired" only when the participant explicitly rejected it. Otherwise write that no rejected path was reliably identified, set status "uncertain", and confidence at most 30.
 - If an uncertainty or next action is not explicit, say it was not reliably identified, set status "uncertain", and confidence at most 30.
 - Use short, specific cards. Cite sources such as "memo: 已排除的方向", "chat turn 4", or "材料 A4". Do not fabricate source locations.
-- All candidates require participant calibration. Set the main goal and next action priority to "pinned"; others default to "normal".`;
+- All candidates require participant calibration. Set the main goal and next action priority to "pinned"; others default to "normal".
+- Build the knowledge network only from the extracted cards. Do not create extra nodes.
+- Add relations only when the participant trace supports them. Use confidence at most 40 for inferred relations.
+- The network should make the participant's reasoning path legible: goal, competing hypotheses, evidence or constraints, rejected path, and minimum next action.
+- Keep content concise: card content no more than 32 Chinese characters or 18 English words; detail no more than 70 Chinese characters or 45 English words.`;
 
   const userPrompt = `Task question:
 ${task.question[locale]}
@@ -116,8 +142,9 @@ ${evidencePack}`;
       mode: "live",
       provider: "deepseek",
       model,
-      promptVersion: "rmw_state_extraction_v1",
+      promptVersion: "rmw_state_and_network_extraction_v2",
       cards: extraction.data.cards,
+      relations: extraction.data.relations,
     });
   } catch {
     return NextResponse.json({ error: "DeepSeek extraction failed" }, { status: 502 });

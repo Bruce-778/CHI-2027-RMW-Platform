@@ -54,3 +54,72 @@ export function exportStudyEvents() {
   URL.revokeObjectURL(url);
   eventLog("event_log_exported", { eventCount: events.length }, { stage: "admin" });
 }
+
+export interface ExperimentExportPayload {
+  participantCode: string;
+  locale: string;
+  condition: string;
+  taskId: string;
+  memo: string;
+  chat: Array<{ role: "user" | "assistant"; text: string }>;
+  recallResponses: string[];
+}
+
+function summarizeEvents(events: StudyEvent[]) {
+  const byType = events.reduce<Record<string, number>>((summary, item) => {
+    summary[item.type] = (summary[item.type] || 0) + 1;
+    return summary;
+  }, {});
+  const byStage = events.reduce<Record<string, number>>((summary, item) => {
+    summary[item.stage] = (summary[item.stage] || 0) + 1;
+    return summary;
+  }, {});
+  const firstAt = events[0]?.at;
+  const lastAt = events.at(-1)?.at;
+  const durationSeconds = firstAt && lastAt
+    ? Math.max(0, Math.round((Date.parse(lastAt) - Date.parse(firstAt)) / 1000))
+    : 0;
+  return {
+    totalEvents: events.length,
+    durationSeconds,
+    byType,
+    byStage,
+    firstAt: firstAt || null,
+    lastAt: lastAt || null,
+  };
+}
+
+export function exportExperimentArchive(payload: ExperimentExportPayload) {
+  const events = readStudyEvents();
+  const archive = {
+    schemaVersion: "rmw-participant-export-v1",
+    exportedAt: new Date().toISOString(),
+    participant: {
+      anonymousCode: payload.participantCode,
+      locale: payload.locale,
+      condition: payload.condition,
+      taskId: payload.taskId,
+    },
+    summary: {
+      ...summarizeEvents(events),
+      chatTurns: payload.chat.length,
+      userChatTurns: payload.chat.filter((item) => item.role === "user").length,
+      memoCharacters: payload.memo.replace(/\s/g, "").length,
+      recallAnswered: payload.recallResponses.filter((item) => item.trim()).length,
+    },
+    finalState: {
+      memo: payload.memo,
+      chatTranscript: payload.chat,
+      unsupportedRecall: payload.recallResponses,
+    },
+    interactionTimeline: events,
+  };
+  const blob = new Blob([JSON.stringify(archive, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `rmw-participant-${payload.participantCode || "anonymous"}-${new Date().toISOString().slice(0, 10)}.json`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+  eventLog("experiment_archive_exported", { eventCount: events.length }, { stage: "complete" });
+}

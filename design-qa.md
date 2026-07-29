@@ -1,37 +1,46 @@
-# RMW design QA
+# Design QA
 
-## Visual truth
+## Scope
 
-- Selected direction: `artifacts/source-option-1.png`
-- Final implementation state: `artifacts/rmw-day2-prod-v2.png`
-- Full-view comparison: `artifacts/design-comparison-final.png`
-- Recovery-region comparison: `artifacts/design-comparison-recovery.png`
-- Primary viewport/state: 1440 × 900, Day 2, RMW, zh-CN
+Reference screenshots supplied by the researcher were compared side by side with the implemented 1440 × 900 states:
 
-The implementation keeps the selected direction's neutral research-workbench structure, warm white surface, restrained indigo accent, three-column hierarchy, memo/recovery split, semantic reasoning-card styling, and card-to-network relationship. The final version improves legibility by simplifying controls, increasing whitespace, pinning the chat composer and primary continuation action, and limiting the first recovery view to the information needed to resume.
+- `artifacts/design-qa/work-comparison.png`
+- `artifacts/design-qa/checkpoint-comparison.png`
 
-## Interaction and layout checks
+Additional checks were performed at 1280 × 800 for both Chinese and English entry/workspace layouts.
 
-- Participant entry, language choice, consent, pre-survey, tutorial, unsupported recall, workspace, and completion states checked.
-- RMW, Summary, and Notes condition routes checked without exposing a participant-side condition switcher.
-- Reasoning-card verification and state updates checked.
-- Resume Brief, Reasoning Cards, and Knowledge Network tabs checked; the full network has working pan/zoom controls.
-- Chat composer, memo editor, material selection, evidence actions, and completion CTA remain reachable.
-- Researcher dashboard and review queue checked.
-- zh-CN at 1440 × 900 and en at 1280 × 800 checked without document overflow.
-- Sub-1100px desktop/mobile block checked.
-- Fresh production-browser console checked with no current errors.
-- `npm run lint` passed.
-- Production build completed and generated `.next/BUILD_ID`.
+## Result: PASS
 
-## Issues resolved during QA
+No open P0, P1, or P2 visual defects remain in the requested flow.
 
-- P1: chat input was placed below the viewport because grid children used intrinsic height; grid rows and all workspace children now use bounded `min-height: 0` behavior.
-- P1: standalone Knowledge Network tab inherited zero height; the network container now fills the available recovery region.
-- P1: an invalid icon export caused an early runtime failure; replaced with a supported Phosphor icon.
-- P2: nested interactive tooltip markup caused hydration warnings; simplified to an accessible title/label control.
-- P2: development compilation overlays polluted screenshots; all final visual checks use the production build.
+### Workspace
 
-No unresolved P0, P1, or P2 issues were found in the final checked states.
+- Preserves the neutral, light research-workbench appearance, restrained indigo accent, fine borders, and high-density desktop layout.
+- Uses the planned Materials / AI / Memo + Stage Goals hierarchy.
+- Header contains only the phase tag (`第一阶段` / `Phase 1`); the task/topic tag and other header copy are absent.
+- The chat input no longer displays `向 AI 助手提问…`.
+- Phase-1 save-window control and its timing notice remain reachable at 1280 × 800 without overlap.
 
-final result: passed
+### Save window
+
+- Page title is `保存窗口`; the former RMW-neutral-filter tag is absent.
+- The former Accept / Edit / Pin block has been removed.
+- Goal hierarchy occupies the upper-left region, the DeepSeek candidate problem state occupies the upper-right region, and the knowledge network follows below.
+- The information density remains readable without adding an unrequested flowchart or extra network nodes.
+- The floating help control and introductory dialog explain each region without permanently occupying workspace area.
+
+### Bilingual and responsive fit
+
+- Chinese and English entry headings remain on one line at 1280 × 800.
+- The English entry card no longer overflows the right viewport edge.
+- Chinese/English labels, notices, timers, game instructions, and completion controls fit their containers.
+- Mobile remains intentionally blocked because the controlled experiment requires a desktop viewport.
+
+### Interaction QA
+
+- Phase 1 blocks save-window entry before the final three minutes and shows a specific notice.
+- Save window blocks continuation during its first minute and shows a specific notice.
+- Letter and color tasks each require a perfect score and offer a restart after any error.
+- Unsupported recall contains exactly three questions.
+- Recovery blocks completion until seven minutes remain and shows the current remaining time.
+- The completion screen exports the complete structured interaction archive.
