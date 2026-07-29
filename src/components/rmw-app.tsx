@@ -353,12 +353,12 @@ function Recall({ locale,setScreen,t }: {locale:Locale;setScreen:(s:Screen)=>voi
 function WorkspaceTour({locale,onComplete}:{locale:Locale;onComplete:()=>void}) {
   const steps=locale==="zh-CN"?[
     {target:"materials",title:"先阅读实验材料",body:"这里有 5 段关于垃圾分类治理的材料。点击不同材料查看全文，系统会记录阅读进度。"},
-    {target:"memo",title:"在工作区记录思考",body:"中间的工作区用于写下候选框架、假设、不确定点、排除方向和下一步。内容会持续保存。"},
+    {target:"memo",title:"在工作区记录思考",body:"中间的工作区用于写下候选框架、假设、不确定点、排除方向和下一步。内容会持续保存；拖动两侧的竖向分隔条可调整各列宽度。"},
     {target:"goals",title:"检查右上角目标",body:"右上角用于逐项核对第一阶段目标。目标内容可独立上下滚动。"},
     {target:"chat",title:"与 AI 比较问题框架",body:"右下角是 AI 助手。请要求它引用材料编号，并区分材料证据、推断和仍需验证的假设。拖动右侧中间的分隔条，可以上下调整两个窗口的高度。"},
   ]:[
     {target:"materials",title:"Read the evidence first",body:"Five materials describe the waste-sorting case. Open each one to read the full text; reading progress is recorded."},
-    {target:"memo",title:"Record reasoning in the workspace",body:"Use the central workspace for candidate framings, hypotheses, uncertainties, rejected directions, and your next step. Its content is continuously saved."},
+    {target:"memo",title:"Record reasoning in the workspace",body:"Use the central workspace for candidate framings, hypotheses, uncertainties, rejected directions, and your next step. Its content is continuously saved; drag either vertical divider to resize the columns."},
     {target:"goals",title:"Check the upper-right goals",body:"Use the upper-right window to check Phase 1 requirements. Its content scrolls independently."},
     {target:"chat",title:"Compare framings with AI",body:"The AI assistant is in the lower-right window. Ask it to cite material numbers and separate evidence, inference, and unverified assumptions. Drag the divider to resize the two right-hand windows."},
   ];
@@ -427,6 +427,43 @@ function Workspace({
   const [showTour,setShowTour]=useState(phase==="work");
   const [rightTopRatio,setRightTopRatio]=useState(48);
   const rightColumnRef=useRef<HTMLElement|null>(null);
+  const workspaceGridRef=useRef<HTMLDivElement|null>(null);
+  const [leftColumnRatio,setLeftColumnRatio]=useState(25);
+  const [rightColumnRatio,setRightColumnRatio]=useState(30);
+  const [remainingSeconds,setRemainingSeconds]=useState(600);
+  const countdownEndRef=useRef<number|null>(null);
+  const timerExpiredLoggedRef=useRef(false);
+  const centerColumnRatio=100-leftColumnRatio-rightColumnRatio;
+  const timerText=`${String(Math.floor(remainingSeconds/60)).padStart(2,"0")}:${String(remainingSeconds%60).padStart(2,"0")}`;
+
+  useEffect(()=>{
+    if(countdownEndRef.current===null)countdownEndRef.current=Date.now()+600_000;
+    const updateTimer=()=>{
+      const next=Math.max(0,Math.ceil(((countdownEndRef.current??Date.now())-Date.now())/1000));
+      setRemainingSeconds(next);
+      if(next===0&&!timerExpiredLoggedRef.current){
+        timerExpiredLoggedRef.current=true;
+        eventLog("workspace_timer_expired",{taskId,phase,durationSeconds:600},{stage:"research_work"});
+      }
+    };
+    updateTimer();
+    const timer=window.setInterval(updateTimer,250);
+    return()=>window.clearInterval(timer);
+  },[phase,taskId]);
+
+  const resizeColumns=(divider:"left"|"right",clientX:number)=>{
+    const bounds=workspaceGridRef.current?.getBoundingClientRect();
+    if(!bounds)return;
+    const pointerRatio=((clientX-bounds.left)/bounds.width)*100;
+    if(divider==="left"){
+      const maxLeft=100-rightColumnRatio-32;
+      setLeftColumnRatio(Math.min(Math.min(36,maxLeft),Math.max(18,pointerRatio)));
+    }else{
+      const nextRight=100-pointerRatio;
+      const maxRight=100-leftColumnRatio-32;
+      setRightColumnRatio(Math.min(Math.min(42,maxRight),Math.max(24,nextRight)));
+    }
+  };
   const resizeRightPanels=(clientY:number)=>{
     const bounds=rightColumnRef.current?.getBoundingClientRect();
     if(!bounds)return;
@@ -466,10 +503,42 @@ function Workspace({
     }
   };
   return <div className="h-screen min-h-[720px] overflow-hidden bg-[#f8f7f3]">
-    <header className="flex h-[68px] items-center justify-between border-b bg-white/90 px-5"><div className="flex items-center gap-4"><Brand/><Badge variant="secondary" className="rounded-full">{phase==="work"?(locale==="zh-CN"?"第一阶段 · 形成问题框架":"Phase 1 · Frame the problem"):t.day}</Badge><Badge variant="outline" className="rounded-full">{task.label[locale]}</Badge></div><div className="flex items-center gap-5 text-sm"><span className="flex items-center gap-2 font-mono text-primary"><Timer size={18}/>18:42</span><span className="flex items-center gap-2 text-[var(--active)]"><CheckCircle size={18}/>{t.saved}</span><span className="flex items-center gap-2 text-muted-foreground"><Globe size={18}/>{locale==="zh-CN"?"中文":"English"}</span><button onClick={()=>setShowTour(true)} aria-label={t.help} title={t.readFirst} className="grid size-10 place-items-center rounded-lg hover:bg-muted"><Question size={20}/></button></div></header>
-    <div className="workspace-grid grid h-[calc(100vh-68px)] min-h-0 overflow-hidden">
+    <header className="flex h-[68px] items-center justify-between border-b bg-white/90 px-5"><div className="flex items-center gap-4"><Brand/><Badge variant="secondary" className="rounded-full">{phase==="work"?(locale==="zh-CN"?"第一阶段 · 形成问题框架":"Phase 1 · Frame the problem"):t.day}</Badge><Badge variant="outline" className="rounded-full">{task.label[locale]}</Badge></div><div className="flex items-center gap-5 text-sm"><span className={`flex items-center gap-2 font-mono ${remainingSeconds<=60?"text-destructive":"text-primary"}`} aria-label={locale==="zh-CN"?`剩余时间 ${timerText}`:`Time remaining ${timerText}`}><Timer size={18}/>{timerText}</span><span className="flex items-center gap-2 text-[var(--active)]"><CheckCircle size={18}/>{t.saved}</span><span className="flex items-center gap-2 text-muted-foreground"><Globe size={18}/>{locale==="zh-CN"?"中文":"English"}</span><button onClick={()=>setShowTour(true)} aria-label={t.help} title={t.readFirst} className="grid size-10 place-items-center rounded-lg hover:bg-muted"><Question size={20}/></button></div></header>
+    <div ref={workspaceGridRef} className="workspace-grid grid h-[calc(100vh-68px)] min-h-0 overflow-hidden" style={{gridTemplateColumns:`${leftColumnRatio}fr 10px ${centerColumnRatio}fr 10px ${rightColumnRatio}fr`}}>
       <MaterialsPanel locale={locale} taskId={taskId} t={t}/>
+      <button
+        type="button"
+        aria-label={locale==="zh-CN"?"左右拖动，调整材料与工作区宽度":"Drag horizontally to resize materials and workspace"}
+        title={locale==="zh-CN"?"左右拖动调整窗口宽度":"Drag to resize panels"}
+        className="group grid cursor-col-resize touch-none place-items-center border-x bg-[#f8f7f3] hover:bg-secondary focus-visible:z-20"
+        onPointerDown={event=>event.currentTarget.setPointerCapture(event.pointerId)}
+        onPointerMove={event=>{if(event.currentTarget.hasPointerCapture(event.pointerId))resizeColumns("left",event.clientX)}}
+        onPointerUp={event=>{if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId)}}
+        onPointerCancel={event=>{if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId)}}
+        onKeyDown={event=>{
+          if(event.key==="ArrowLeft"){event.preventDefault();setLeftColumnRatio(current=>Math.max(18,current-2))}
+          if(event.key==="ArrowRight"){event.preventDefault();setLeftColumnRatio(current=>Math.min(Math.min(36,100-rightColumnRatio-32),current+2))}
+        }}
+      >
+        <span className="h-12 w-1 rounded-full bg-border transition group-hover:bg-primary/45"/>
+      </button>
       <MemoPanel locale={locale} memo={memo} setMemo={setMemo} t={t}/>
+      <button
+        type="button"
+        aria-label={locale==="zh-CN"?"左右拖动，调整工作区与右侧窗口宽度":"Drag horizontally to resize workspace and right-hand panels"}
+        title={locale==="zh-CN"?"左右拖动调整窗口宽度":"Drag to resize panels"}
+        className="group grid cursor-col-resize touch-none place-items-center border-x bg-[#f8f7f3] hover:bg-secondary focus-visible:z-20"
+        onPointerDown={event=>event.currentTarget.setPointerCapture(event.pointerId)}
+        onPointerMove={event=>{if(event.currentTarget.hasPointerCapture(event.pointerId))resizeColumns("right",event.clientX)}}
+        onPointerUp={event=>{if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId)}}
+        onPointerCancel={event=>{if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId)}}
+        onKeyDown={event=>{
+          if(event.key==="ArrowLeft"){event.preventDefault();setRightColumnRatio(current=>Math.min(Math.min(42,100-leftColumnRatio-32),current+2))}
+          if(event.key==="ArrowRight"){event.preventDefault();setRightColumnRatio(current=>Math.max(24,current-2))}
+        }}
+      >
+        <span className="h-12 w-1 rounded-full bg-border transition group-hover:bg-primary/45"/>
+      </button>
       <section ref={rightColumnRef} className="grid min-h-0 min-w-0 overflow-hidden bg-white" style={{gridTemplateRows:`${rightTopRatio}fr 10px ${100-rightTopRatio}fr`}}>
         {phase==="work"
           ?<PhaseOnePanel locale={locale} taskId={taskId} memo={memo} setScreen={setScreen}/>
@@ -507,7 +576,7 @@ function MaterialsPanel({locale,taskId,t}:{locale:Locale;taskId:ResearchTaskId;t
     setRead(current=>new Set([...current,id]));
     eventLog("material_opened",{id,taskId},{stage:"research_work",targetType:"material",targetId:id});
   };
-  return <aside data-tour="materials" className="flex min-h-0 min-w-0 flex-col overflow-hidden border-r bg-[#fbfaf7]">
+  return <aside data-tour="materials" className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[#fbfaf7]">
     <div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><BookOpenText size={20}/>{t.materials}</h2><Badge variant="outline" className="text-[10px]">5 passages</Badge></div>
     <div className="shrink-0 px-5 py-4"><div className="mb-2 flex justify-between text-xs text-muted-foreground"><span>{t.progress}</span><span>{read.size} / {materials.length}</span></div><Progress value={(read.size/materials.length)*100} className="h-1.5"/></div>
     <div className="panel-scroll min-h-0 flex-1 overflow-y-auto px-3 pb-4">{materials.map(material=><button key={material.id} onClick={()=>openMaterial(material.id)} className={`mb-2 w-full rounded-xl px-3 py-4 text-left transition ${active===material.id?"bg-white shadow-[0_5px_18px_rgba(35,43,70,.07)] ring-1 ring-primary/15":"hover:bg-white/80"}`}><div className="mb-2 flex items-center justify-between"><span className="grid size-6 place-items-center rounded-md bg-secondary text-xs font-semibold text-primary">{material.n}</span>{read.has(material.id)&&<span className="flex items-center gap-1 text-[10px] text-[var(--active)]"><Check size={12}/>{locale==="zh-CN"?"已阅读":"Read"}</span>}</div><h3 className="text-sm font-semibold leading-5">{material.title[locale]}</h3><p className={`mt-2 whitespace-pre-line text-xs leading-5 text-muted-foreground ${active===material.id?"":"line-clamp-3"}`}>{material.excerpt[locale]}</p><p className="mt-3 text-[10px] text-primary">{material.meta[locale]}</p></button>)}</div>
@@ -522,13 +591,13 @@ function ChatPanel({locale,chat,message,setMessage,send,isLoading,t}:{locale:Loc
       {chat.map((item,index)=><div key={`${item.role}-${index}`} className={`mb-4 flex ${item.role==="user"?"justify-end":"justify-start"}`}><div className={`max-w-[88%] whitespace-pre-wrap rounded-xl px-4 py-3 text-sm leading-6 ${item.role==="user"?"bg-secondary text-secondary-foreground":"bg-[#f5f6f8]"}`}>{item.text}</div></div>)}
       {isLoading&&<div className="mb-4 flex justify-start"><div className="rounded-xl bg-[#f5f6f8] px-4 py-3 text-xs text-muted-foreground"><Sparkle size={14} className="mr-2 inline animate-pulse text-primary"/>{locale==="zh-CN"?"DeepSeek 正在对照材料…":"DeepSeek is comparing the evidence…"}</div></div>}
     </div>
-    <div className="shrink-0 p-4 pt-0"><div className="rounded-xl border bg-white p-3 shadow-[0_8px_30px_rgba(35,43,70,.06)]"><Textarea value={message} disabled={isLoading} onChange={event=>setMessage(event.target.value)} onKeyDown={event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();send()}}} rows={2} className="resize-none border-0 bg-transparent p-1 shadow-none focus-visible:ring-0" placeholder={t.ask}/><div className="mt-2 flex items-center justify-between"><span className="text-[10px] text-muted-foreground">{locale==="zh-CN"?"请让 AI 引用材料编号并区分证据与推断":"Ask AI to cite material numbers and separate evidence from inference"}</span><Button size="icon" onClick={send} disabled={isLoading||!message.trim()} aria-label="Send"><PaperPlaneTilt size={18} weight="fill"/></Button></div></div><p className="mt-2 text-center text-[10px] text-muted-foreground">{t.disclaimer}</p></div>
+    <div className="shrink-0 p-3 pt-0"><div className="flex items-end gap-2 rounded-xl border bg-white px-3 py-2 shadow-[0_8px_30px_rgba(35,43,70,.06)]"><Textarea value={message} disabled={isLoading} onChange={event=>setMessage(event.target.value)} onKeyDown={event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();send()}}} rows={1} className="min-h-9 max-h-16 resize-none overflow-y-auto border-0 bg-transparent px-0 py-2 shadow-none focus-visible:ring-0" placeholder={t.ask}/><Button size="icon" className="mb-0.5" onClick={send} disabled={isLoading||!message.trim()} aria-label="Send"><PaperPlaneTilt size={18} weight="fill"/></Button></div><p className="mt-1.5 text-center text-[9px] leading-4 text-muted-foreground">{t.disclaimer}</p></div>
   </section>;
 }
 
 function MemoPanel({locale,memo,setMemo,t}:{locale:Locale;memo:string;setMemo:(s:string)=>void;t:typeof copy[Locale]}) {
   const count=locale==="zh-CN"?memo.replace(/\s/g,"").length:(memo.trim()?memo.trim().split(/\s+/).length:0);
-  return <section data-tour="memo" className="flex min-h-0 min-w-0 flex-col overflow-hidden border-r bg-white">
+  return <section data-tour="memo" className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
     <div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><NotePencil size={20}/>{t.memo}</h2><span className="flex items-center gap-2 text-xs text-muted-foreground"><Check size={15}/>{t.saved} · {locale==="zh-CN"?"目标 600–900 字":"Target 600–900 words"}</span></div>
     <div className="relative min-h-0 flex-1 px-6 py-5"><Textarea value={memo} onChange={event=>{const next=event.target.value;const nextCount=locale==="zh-CN"?next.replace(/\s/g,"").length:(next.trim()?next.trim().split(/\s+/).length:0);setMemo(next);eventLog("memo_edited",{count:nextCount},{stage:"research_work",targetType:"memo"})}} className="panel-scroll h-full resize-none overflow-y-auto border-0 p-0 pb-8 text-[15px] leading-7 shadow-none focus-visible:ring-0" placeholder={t.memoPlaceholder}/><div className="pointer-events-none absolute bottom-4 right-6 rounded-md bg-white/90 px-2 py-1 text-right font-mono text-[10px] text-muted-foreground">{count} {t.words} · 600–900</div></div>
   </section>;
