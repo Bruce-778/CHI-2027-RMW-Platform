@@ -18,7 +18,6 @@ import { createInitialCards, relations } from "@/lib/demo-data";
 import { eventLog } from "@/lib/event-log";
 import {
   getResearchTask,
-  memoQuestions,
   phaseOneGoals,
   taskOverview,
   type ResearchTaskId,
@@ -164,10 +163,6 @@ function TaskBrief({locale,taskId,setScreen}:{locale:Locale;taskId:ResearchTaskI
         <div className="flex items-center gap-3"><span className="grid size-7 shrink-0 place-items-center rounded-full bg-secondary text-xs font-semibold text-primary">{index+1}</span><h3 className="text-sm font-semibold">{goal.title[locale]}</h3></div>
         <ul className="ml-10 mt-3 space-y-2 text-xs leading-5 text-muted-foreground">{goal.criteria.map(criterion=><li key={criterion[locale]} className="flex gap-2"><span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary/55"/><span>{criterion[locale]}</span></li>)}</ul>
       </section>)}</div>
-    </div>
-    <div className="mt-7 border-t pt-6">
-      <h2 className="text-sm font-semibold">{locale==="zh-CN"?"最终 memo（600–900 字）需回答：":"The final memo (600–900 words) should answer:"}</h2>
-      <ol className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">{memoQuestions.map((question,index)=><li key={question[locale]}><span className="mr-2 font-mono text-primary">{index+1}.</span>{question[locale]}</li>)}</ol>
     </div>
     <div className="mt-8 grid grid-cols-[auto_1fr] gap-3">
       <Button variant="outline" onClick={()=>setScreen("landing")}>{locale==="zh-CN"?"返回":"Back"}</Button>
@@ -481,7 +476,6 @@ function PhaseOnePanel({locale,taskId,memo,setScreen}:{locale:Locale;taskId:Rese
           return <label key={id} className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-[11px] leading-4 hover:bg-muted/50"><input type="checkbox" checked={completed.has(id)} onChange={()=>toggleCriterion(goal.id,criterionIndex)} className="mt-0.5 size-3.5 accent-[var(--active)]"/><span>{criterion[locale]}</span></label>;
         })}</div>
       </section>)}</div>
-      <details className="mt-4 rounded-xl border bg-white p-4"><summary className="cursor-pointer text-xs font-semibold">{locale==="zh-CN"?"查看最终 memo 的 6 个问题":"View the six final-memo questions"}</summary><ol className="mt-3 space-y-2 text-xs leading-5 text-muted-foreground">{memoQuestions.map((question,index)=><li key={question[locale]}>{index+1}. {question[locale]}</li>)}</ol></details>
     </div>
     <div className="shrink-0 border-t bg-white px-5 py-3"><div className="mb-2 flex justify-between text-[10px] text-muted-foreground"><span>{locale==="zh-CN"?"当前 memo":"Current memo"}</span><span>{memoCount} {locale==="zh-CN"?"字":"words"} · {completed.size}/{totalCriteria} {locale==="zh-CN"?"评价点":"criteria"}</span></div><TimedButton seconds={10} locale={locale} label={locale==="zh-CN"?"保存推理位置并进入中断任务":"Save reasoning position and begin interruption"} className="h-11 w-full text-sm" onClick={()=>{eventLog("phase_one_checkpoint_requested",{taskId,completedGoals:completedGoalCount,completedCriteria:completed.size,totalCriteria,memoCount},{stage:"research_work"});setScreen("checkpoint")}} /></div>
   </section>;

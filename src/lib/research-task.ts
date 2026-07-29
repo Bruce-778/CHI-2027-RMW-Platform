@@ -115,15 +115,6 @@ export const phaseOneGoals: PhaseOneGoal[] = [
   },
 ];
 
-export const memoQuestions: LocalizedText[] = [
-  { "zh-CN": "这个研究要解决什么问题？", en: "What problem will this research address?" },
-  { "zh-CN": "为什么这个问题重要？", en: "Why does this problem matter?" },
-  { "zh-CN": "现有做法有什么不足？", en: "What are the limitations of current approaches?" },
-  { "zh-CN": "你提出的干预或方案是什么？", en: "What intervention or proposal do you offer?" },
-  { "zh-CN": "你会如何设计研究来验证它？", en: "How would you design a study to evaluate it?" },
-  { "zh-CN": "哪些假设目前仍不确定？", en: "Which assumptions remain uncertain?" },
-];
-
 export const taskOverview: LocalizedText = {
   "zh-CN": "你将阅读 5 段关于城市垃圾分类治理的材料，并与 AI 协作，形成一个可研究的问题框架。",
   en: "You will read five materials about urban waste-sorting governance and work with AI to develop a researchable problem framing.",
