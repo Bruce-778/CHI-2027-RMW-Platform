@@ -6,6 +6,7 @@ const bodySchema = z.object({
   messages: z.array(z.object({ role: z.enum(["user","assistant"]), content: z.string().min(1).max(8000) })).min(1).max(60),
   locale: z.enum(["zh-CN","en"]).default("zh-CN"),
   taskId: z.enum(["library","waste","bike"]).default("library"),
+  model: z.enum(["deepseek-v4-flash","deepseek-v4-pro"]).optional(),
 });
 
 const completionSchema=z.object({
@@ -53,10 +54,12 @@ Evidence pack:
 ${evidencePack}`;
   const baseUrl = process.env.DEEPSEEK_BASE_URL || process.env.LLM_BASE_URL || "https://api.deepseek.com";
   const apiKey = process.env.DEEPSEEK_API_KEY || process.env.LLM_API_KEY;
-  const model = process.env.DEEPSEEK_MODEL || process.env.LLM_MODEL || "deepseek-v4-flash";
+  const model = parsed.data.model || process.env.DEEPSEEK_MODEL || process.env.LLM_MODEL || "deepseek-v4-flash";
   if (!apiKey) {
     return NextResponse.json({
       mode: "demo",
+      provider: "deepseek",
+      model,
       content: locale === "zh-CN"
         ? `当前是无 API Key 的演示模式。请先写出两个相互竞争的解释，并为每个解释标出至少一段材料编号（例如 [材料 ${task.code}1]）。然后说明：哪一条是材料直接支持的证据，哪一条仍只是需要验证的推断？`
         : `This preview has no API key. Start with two competing explanations and cite at least one material for each (for example, [Material ${task.code}1]). Then distinguish direct evidence from an inference that still needs testing.`,

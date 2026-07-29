@@ -26,6 +26,8 @@ Open `http://localhost:3000`. Useful review routes:
 
 The `task` query parameter is for researcher review only. The participant flow deterministically assigns a task from the anonymous participant code and does not expose a topic chooser. The deployed preview runs without secrets and stores demo interaction events in browser local storage. Configure `.env.local` from `.env.example` to enable DeepSeek and Supabase.
 
+The current build starts in **test mode**: timing gates are bypassed so every screen can be reviewed immediately. Add `?timed=1` to a direct route to check the formal protocol. The formal Phase 1 duration is 10 minutes; its save window opens in the final three minutes.
+
 ## DeepSeek
 
 The server routes use DeepSeek's OpenAI-compatible Chat Completions API for evidence-grounded tutoring and pre-interruption reasoning-state extraction. Keep the key server-side:
@@ -36,7 +38,9 @@ DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-flash
 ```
 
-Without `DEEPSEEK_API_KEY`, the tutor remains usable in scripted demo mode and the checkpoint uses neutral, low-confidence calibration candidates. It never inserts the researcher's answer key. In Vercel, add these values under Project Settings → Environment Variables and redeploy.
+Create `rmw-platform/.env.local`, add the values above, and restart `pnpm dev`. Do not prefix the key with `NEXT_PUBLIC_`, paste it into a component, or commit `.env.local`.
+
+Participants can choose **DeepSeek V4 Flash** or **DeepSeek V4 Pro** on the entry screen. The server accepts only those two model identifiers; `DEEPSEEK_MODEL` is the fallback when no participant selection is supplied. Without `DEEPSEEK_API_KEY`, the tutor remains usable in scripted demo mode and the checkpoint uses neutral, low-confidence calibration candidates. It never inserts the researcher's answer key. In Vercel, add the same values under Project Settings → Environment Variables and redeploy.
 
 ## Experimental-task controls
 
@@ -51,15 +55,15 @@ Without `DEEPSEEK_API_KEY`, the tutor remains usable in scripted demo mode and t
 The demo now follows one closed-loop interruption protocol:
 
 1. Extract candidate problem state from chat, materials, memo, and interaction traces.
-2. Open the save window only in the last three minutes of Phase 1.
+2. In the formal timed protocol, run Phase 1 for 10 minutes and open the save window only in its last three minutes. Test mode bypasses this gate.
 3. Present the extracted main goal, active and suspended subgoals, rejected path, concise candidate problem state, and a card-linked knowledge network. The save window intentionally has no `Accept`, `Edit`, or `Pin` controls.
-4. Keep the save window visible for at least one minute before the participant can continue.
+4. In the formal timed protocol, keep the save window visible for at least one minute before the participant can continue. Test mode bypasses this gate.
 5. Run both a letter 2-back task and a color-recognition task. Each task requires a perfect score; otherwise it restarts.
 6. Collect three unsupported-recall responses before revealing recovery support.
 7. Resume with a minimal brief first, then reasoning cards, source backlinks, and the knowledge network.
 8. Enable `Complete research` only when seven minutes remain, then provide a structured JSON export containing the memo, transcript, recall answers, event summary, and complete interaction timeline.
 
-For local review, append `&fast=1` to a direct route. This shortens timers while preserving every gate; production behavior remains 20 minutes for Phase 1, one minute in the save window, and 15 minutes for recovery.
+For local review, test mode is the default and removes waiting. Append `?timed=1` (or `&timed=1` when a query already exists) to enable the formal timers: 10 minutes for Phase 1, one minute in the save window, and 15 minutes for recovery.
 
 The DeepSeek tutor prompt requires a concise core judgment, 2–4 numbered points, explicit separation of evidence/inference/unverified claims, source labels, and a minimum next action. The extraction prompt produces both the bounded reasoning-card set and relations for the knowledge network from the same trace.
 

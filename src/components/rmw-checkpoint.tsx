@@ -24,14 +24,6 @@ import {
 } from "@xyflow/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { createInitialCards, relations as demoRelations } from "@/lib/demo-data";
 import { eventLog } from "@/lib/event-log";
@@ -159,7 +151,7 @@ const labels = {
   },
 };
 
-function Timeline({ locale, active }: { locale: Locale; active: "save" | "break" }) {
+export function ExperimentTimeline({ locale, active, compact=false }: { locale: Locale; active: "task" | "save" | "break" | "resume"; compact?: boolean }) {
   const t = labels[locale];
   const steps = [
     { id: "task", label: t.task },
@@ -168,7 +160,7 @@ function Timeline({ locale, active }: { locale: Locale; active: "save" | "break"
     { id: "resume", label: t.resume },
   ];
   const activeIndex = steps.findIndex((step) => step.id === active);
-  return <div className="grid grid-cols-4 rounded-xl border bg-white p-2 shadow-sm">
+  return <div className={`grid grid-cols-4 bg-white ${compact?"h-[52px] border-b px-5 py-1.5":"rounded-xl border p-2 shadow-sm"}`}>
     {steps.map((step, index) => <div key={step.id} className="relative flex items-center gap-3 px-4 py-2">
       {index > 0 && <div className="absolute -left-2 top-1/2 h-px w-4 bg-border" />}
       <span className={`grid size-7 place-items-center rounded-full text-xs font-semibold ${index <= activeIndex ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}>
@@ -180,7 +172,7 @@ function Timeline({ locale, active }: { locale: Locale; active: "save" | "break"
 }
 
 function useCheckpointCountdown(fastMode: boolean) {
-  const duration = fastMode ? 10 : 60;
+  const duration = fastMode ? 0 : 60;
   const [remaining, setRemaining] = useState(duration);
   useEffect(() => {
     const storageKey = "rmw-timer-checkpoint";
@@ -267,19 +259,66 @@ function CheckpointNetwork({ cards, relations, locale }: { cards: CaptureCard[];
   </div>;
 }
 
+function CheckpointGuide({ locale, open, onOpenChange }: { locale: Locale; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const chinese=locale==="zh-CN";
+  const items=[
+    ["checkpoint-goals",Target,chinese?"目标结构":"Goal structure",chinese?"这里汇总主目标、活跃子目标、挂起目标和已排除路径。":"This area summarizes the main, active, suspended, and rejected paths."],
+    ["checkpoint-state",Brain,chinese?"候选 Problem State":"Candidate problem state",chinese?"这是 DeepSeek 根据 memo、对话和材料引用生成的候选状态，不代表系统读取了你的真实想法。":"DeepSeek derives this candidate state from the memo, chat, and citations."],
+    ["checkpoint-network",Graph,chinese?"知识网络":"Knowledge network",chinese?"这里展示目标、假设、约束、排除路径和下一步之间的关系。":"This shows relations among goals, hypotheses, constraints, rejected paths, and next actions."],
+  ];
+  const [step,setStep]=useState(0);
+  const [rect,setRect]=useState<DOMRect|null>(null);
+  const targetId=String(items[step][0]);
+  useEffect(()=>{
+    if(!open)return;
+    const update=()=>{
+      const target=document.querySelector(`[data-tour="${targetId}"]`);
+      if(target)setRect(target.getBoundingClientRect());
+    };
+    const frame=requestAnimationFrame(update);
+    window.addEventListener("resize",update);
+    window.addEventListener("scroll",update,true);
+    return()=>{cancelAnimationFrame(frame);window.removeEventListener("resize",update);window.removeEventListener("scroll",update,true);};
+  },[open,targetId]);
+  if(!open||!rect)return null;
+  const [,I,title,description]=items[step];
+  const Icon=I as typeof Brain;
+  const gap=8;
+  const top=Math.max(0,rect.top-gap);
+  const left=Math.max(0,rect.left-gap);
+  const right=Math.min(window.innerWidth,rect.right+gap);
+  const bottom=Math.min(window.innerHeight,rect.bottom+gap);
+  const calloutStyle={top:`${Math.max(16,Math.min(window.innerHeight-250,rect.top+12))}px`,left:right+340<window.innerWidth?`${right+18}px`:`${Math.max(16,left-338)}px`};
+  const finish=()=>{setStep(0);onOpenChange(false);};
+  return <div className="fixed inset-0 z-[80]" role="dialog" aria-modal="true" aria-label={chinese?"保存窗口分步导览":"Save-window tour"}>
+    <div className="absolute bg-slate-950/55 backdrop-blur-[2px]" style={{inset:"0 0 auto 0",height:top}}/>
+    <div className="absolute bg-slate-950/55 backdrop-blur-[2px]" style={{top,left:0,width:left,height:bottom-top}}/>
+    <div className="absolute bg-slate-950/55 backdrop-blur-[2px]" style={{top,left:right,right:0,height:bottom-top}}/>
+    <div className="absolute bg-slate-950/55 backdrop-blur-[2px]" style={{top:bottom,left:0,right:0,bottom:0}}/>
+    <div className="pointer-events-none absolute rounded-2xl ring-4 ring-white shadow-[0_0_0_2px_var(--primary),0_18px_70px_rgba(13,22,48,.32)]" style={{top,left,width:right-left,height:bottom-top}}/>
+    <aside className="absolute w-80 rounded-2xl border bg-white p-5 shadow-[0_24px_80px_rgba(10,18,44,.28)]" style={calloutStyle}>
+      <div className="flex items-center justify-between"><span className="grid size-10 place-items-center rounded-xl bg-secondary text-primary"><Icon size={21}/></span><span className="text-xs font-semibold text-muted-foreground">{step+1} / {items.length}</span></div>
+      <h2 className="mt-4 text-lg font-semibold">{String(title)}</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">{String(description)}</p>
+      <div className="mt-5 flex justify-between"><Button variant="ghost" size="sm" onClick={finish}>{chinese?"退出导览":"Exit"}</Button><Button size="sm" onClick={()=>step===items.length-1?finish():setStep(current=>current+1)}>{step===items.length-1?(chinese?"完成":"Done"):(chinese?"下一步":"Next")}<ArrowRight/></Button></div>
+    </aside>
+  </div>;
+}
+
 export function RmwCheckpoint({
   locale,
   taskId,
   memo,
   messages,
-  fastMode,
+  testMode,
+  deepSeekModel,
   onContinue,
 }: {
   locale: Locale;
   taskId: ResearchTaskId;
   memo: string;
   messages: Array<{ role: "user" | "assistant"; text: string }>;
-  fastMode: boolean;
+  testMode: boolean;
+  deepSeekModel: "deepseek-v4-flash" | "deepseek-v4-pro";
   onContinue: () => void;
 }) {
   const t = labels[locale];
@@ -288,7 +327,7 @@ export function RmwCheckpoint({
   const [mode, setMode] = useState<"loading" | "live" | "demo" | "error">("loading");
   const [guideOpen, setGuideOpen] = useState(true);
   const [earlyNotice, setEarlyNotice] = useState(false);
-  const remaining = useCheckpointCountdown(fastMode);
+  const remaining = useCheckpointCountdown(testMode);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -297,7 +336,7 @@ export function RmwCheckpoint({
         const response = await fetch("/api/extract", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ locale, taskId, memo, messages }),
+          body: JSON.stringify({ locale, taskId, memo, messages, model: deepSeekModel }),
           signal: controller.signal,
         });
         const result = await response.json() as {
@@ -336,7 +375,7 @@ export function RmwCheckpoint({
     };
     void extract();
     return () => controller.abort();
-  }, [locale, memo, messages, taskId]);
+  }, [deepSeekModel, locale, memo, messages, taskId]);
 
   const main = cards.find((card) => card.goalLevel === "main");
   const active = cards.filter((card) => card.goalLevel === "subgoal").slice(0, 4);
@@ -344,21 +383,9 @@ export function RmwCheckpoint({
   const rejected = cards.find((card) => card.kind === "path");
 
   return <div className="min-h-screen bg-[#f7f6f2] px-6 py-5">
-    <Dialog open={guideOpen} onOpenChange={setGuideOpen}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader><DialogTitle>{t.guideTitle}</DialogTitle><DialogDescription>{t.guideDescription}</DialogDescription></DialogHeader>
-        <div className="space-y-3">
-          {[
-            [Target, t.main, locale === "zh-CN" ? "概括当前研究目标、子目标、挂起目标和已排除路径。" : "Summarizes goals, suspended goals, and rejected paths."],
-            [Brain, t.candidates, locale === "zh-CN" ? "由 DeepSeek 从你的实际工作痕迹中提取，不是预设答案。" : "Extracted from your trace, not from an answer key."],
-            [Graph, t.network, locale === "zh-CN" ? "显示目标、假设、约束与下一步之间的关系。" : "Shows relationships among goals, hypotheses, constraints, and next action."],
-          ].map(([I, title, description]) => { const Icon = I as typeof Brain; return <div key={String(title)} className="flex gap-3 rounded-xl border p-3"><span className="grid size-9 shrink-0 place-items-center rounded-lg bg-secondary text-primary"><Icon size={18} /></span><div><p className="text-sm font-semibold">{String(title)}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{String(description)}</p></div></div>; })}
-        </div>
-        <DialogFooter><Button onClick={() => setGuideOpen(false)}>{locale === "zh-CN" ? "开始查看" : "Start review"}</Button></DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <CheckpointGuide locale={locale} open={guideOpen} onOpenChange={setGuideOpen}/>
     <div className="mx-auto max-w-[1480px]">
-      <Timeline locale={locale} active="save" />
+      <ExperimentTimeline locale={locale} active="save" />
       <header className="flex items-end justify-between py-6">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">{t.title}</h1>
@@ -371,7 +398,7 @@ export function RmwCheckpoint({
       </header>
 
       <section className="grid grid-cols-[1fr_1.15fr] gap-5">
-        <article className="rounded-2xl border bg-white p-5 shadow-[0_12px_40px_rgba(35,43,70,.05)]">
+        <article data-tour="checkpoint-goals" className="rounded-2xl border bg-white p-5 shadow-[0_12px_40px_rgba(35,43,70,.05)]">
           <div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">{t.main}</h2><Badge variant="outline"><Target size={13} />1</Badge></div>
           {main && <StateTile card={main} locale={locale} />}
           <div className="mt-4 grid grid-cols-[1.2fr_.8fr_.8fr] gap-3">
@@ -381,23 +408,23 @@ export function RmwCheckpoint({
           </div>
         </article>
 
-        <article className="rounded-2xl border bg-white p-5 shadow-[0_12px_40px_rgba(35,43,70,.05)]">
+        <article data-tour="checkpoint-state" className="rounded-2xl border bg-white p-5 shadow-[0_12px_40px_rgba(35,43,70,.05)]">
           <div className="mb-4 flex items-center justify-between"><div><h2 className="font-semibold">{t.candidates}</h2><p className="mt-1 text-xs text-muted-foreground">{locale === "zh-CN" ? "由 DeepSeek 归纳；不声称读取你的真实想法。" : "Summarized by DeepSeek; it does not claim access to your mind."}</p></div><Badge variant="secondary">{cards.length}</Badge></div>
           <div className="grid max-h-[360px] grid-cols-2 gap-2 overflow-y-auto pr-1">{cards.filter((card) => card.goalLevel !== "main").map((card) => <StateTile key={card.id} card={card} locale={locale} />)}</div>
         </article>
       </section>
 
-      <section className="mt-5">
+      <section data-tour="checkpoint-network" className="mt-5">
         <div className="mb-3 flex items-center justify-between"><div><h2 className="flex items-center gap-2 font-semibold"><Graph size={20} className="text-primary" />{t.network}</h2><p className="mt-1 text-xs text-muted-foreground">{locale === "zh-CN" ? "节点与关系均来自本次 DeepSeek 提取结果。" : "Nodes and relations come from this DeepSeek extraction."}</p></div><Badge variant="outline">{relations.length} relations</Badge></div>
         <CheckpointNetwork cards={cards} relations={relations} locale={locale} />
       </section>
 
       <div className="mt-5 flex items-center justify-between rounded-2xl border bg-white p-4">
-        <div className="flex items-center gap-3 text-sm"><Clock size={20} className="text-primary" /><div><p className="font-medium">{remaining > 0 ? t.waiting : (locale === "zh-CN" ? "可以进入中断任务" : "Interruption task is ready")}</p><p className="text-xs text-muted-foreground">{remaining > 0 ? formatClock(remaining) : "00:00"}</p></div></div>
+        <div className="flex items-center gap-3 text-sm"><Clock size={20} className="text-primary" /><div><p className="font-medium">{testMode ? (locale === "zh-CN" ? "测试模式：可直接继续" : "Test mode: continue anytime") : remaining > 0 ? t.waiting : (locale === "zh-CN" ? "可以进入中断任务" : "Interruption task is ready")}</p>{!testMode&&<p className="text-xs text-muted-foreground">{remaining > 0 ? formatClock(remaining) : "00:00"}</p>}</div></div>
         <div className="text-right">
-          {earlyNotice && remaining > 0 && <p role="status" className="mb-2 text-xs text-amber-700">{t.early}</p>}
-          <Button variant={remaining === 0 ? "default" : "secondary"} className="h-11 px-6" onClick={() => {
-            if (remaining > 0) {
+          {!testMode&&earlyNotice && remaining > 0 && <p role="status" className="mb-2 text-xs text-amber-700">{t.early}</p>}
+          <Button variant={testMode||remaining === 0 ? "default" : "secondary"} className="h-11 px-6" onClick={() => {
+            if (!testMode&&remaining > 0) {
               setEarlyNotice(true);
               eventLog("checkpoint_continue_blocked", { remaining }, { stage: "checkpoint" });
               return;
@@ -460,7 +487,7 @@ export function InterruptionTask({ locale, onComplete }: { locale: Locale; fastM
 
   return <div className="min-h-screen bg-[#f7f6f2] px-6 py-5">
     <div className="mx-auto max-w-5xl">
-      <Timeline locale={locale} active="break" />
+      <ExperimentTimeline locale={locale} active="break" />
       <header className="py-9 text-center"><Badge variant="secondary" className="mb-4"><PauseCircle size={14} />{t.interruption}</Badge><h1 className="text-3xl font-semibold">{game === "letter" ? t.letterGame : t.colorGame}</h1><p className="mt-3 text-sm text-muted-foreground">{game === "letter" ? t.letterHint : t.colorHint}</p></header>
       <section className="mx-auto max-w-2xl rounded-2xl border bg-white p-8 text-center shadow-[0_18px_60px_rgba(35,40,65,.07)]">
         {game === "letter" ? <>

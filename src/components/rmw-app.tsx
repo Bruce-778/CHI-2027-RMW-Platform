@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import {
   ArrowRight, BookOpenText, Brain, ChatCircleDots, Check, CheckCircle, Clock,
-  Globe, Question, LinkSimple,
+  Globe, Graph, Question, LinkSimple,
   NotePencil, PaperPlaneTilt, PauseCircle, PushPin, ShieldCheck, Sparkle,
   SquaresFour, Target, Timer, WarningCircle, XCircle,
 } from "@phosphor-icons/react";
@@ -27,25 +26,18 @@ import {
   type ResearchTaskId,
 } from "@/lib/research-task";
 import type { Condition, EpistemicStatus, Locale, ReasoningCard } from "@/lib/rmw-types";
-import { InterruptionTask, RmwCheckpoint } from "@/components/rmw-checkpoint";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { ExperimentTimeline, InterruptionTask, RmwCheckpoint } from "@/components/rmw-checkpoint";
 
 type Screen = "landing" | "topics" | "brief" | "survey" | "tutorial" | "work" | "checkpoint" | "interruption" | "workspace" | "recall" | "complete";
 type ChatMessage = { role: "user" | "assistant"; text: string };
+type DeepSeekModel = "deepseek-v4-flash" | "deepseek-v4-pro";
 
 const copy = {
   "zh-CN": {
     study: "大学生科研思考与恢复研究", intro: "阅读材料、与 AI 比较问题框架，并在中断后准确找回你的科研思路。",
     privacy: "研究会记录聊天、编辑与界面操作。请勿输入真实敏感信息。所有导出数据使用匿名编号。",
     code: "参与者代码", codeHint: "演示代码：RMW-DEMO", consent: "我已阅读并同意参与研究",
-    enter: "开始研究", flowPreview: "体验完整中断—恢复流程", preview: "直接预览 Day 2 RMW", admin: "研究者后台", language: "界面语言",
+    enter: "开始研究", language: "界面语言",
     pretitle: "开始前，先了解你的经验", next: "继续", back: "返回", tutorial: "界面快速导览",
     materials: "材料", chat: "AI 助手", memo: "研究备忘录", recovery: "推理恢复支持",
     day: "Day 2 · 恢复阶段", saved: "已保存", help: "帮助", progress: "阅读进度",
@@ -63,7 +55,7 @@ const copy = {
     study: "Student Research Framing & Recovery Study", intro: "Read evidence, compare research framings with AI, and recover your reasoning accurately after interruption.",
     privacy: "The study records chat, edits, and interface actions. Do not enter sensitive information. Exports use anonymous IDs.",
     code: "Participant code", codeHint: "Demo code: RMW-DEMO", consent: "I have read the information and agree to participate",
-    enter: "Start study", flowPreview: "Try the full interruption–resumption flow", preview: "Preview Day 2 RMW", admin: "Research console", language: "Interface language",
+    enter: "Start study", language: "Interface language",
     pretitle: "A few questions about your experience", next: "Continue", back: "Back", tutorial: "Quick workspace tour",
     materials: "Materials", chat: "AI assistant", memo: "Research memo", recovery: "Reasoning recovery",
     day: "Day 2 · Resume", saved: "Saved", help: "Help", progress: "Reading progress",
@@ -88,7 +80,8 @@ export function RmwApp() {
   const [memo, setMemo] = useState(() => getResearchTask("library").starterMemo["zh-CN"]);
   const [chat, setChat] = useState<ChatMessage[]>(() => [{ role: "assistant", text: getResearchTask("library").assistantIntro["zh-CN"] }]);
   const [recallResponses, setRecallResponses] = useState<string[]>(["", "", ""]);
-  const [fastMode, setFastMode] = useState(false);
+  const [testMode, setTestMode] = useState(true);
+  const [deepSeekModel, setDeepSeekModel] = useState<DeepSeekModel>("deepseek-v4-flash");
   const t = copy[locale];
 
   useEffect(() => {
@@ -99,7 +92,7 @@ export function RmwApp() {
     const task = params.get("task");
     const frame = requestAnimationFrame(() => {
       const nextLocale: Locale = lang === "en" || lang === "zh-CN" ? lang : "zh-CN";
-      setFastMode(params.get("fast") === "1");
+      setTestMode(params.get("timed") !== "1");
       if (lang === "en" || lang === "zh-CN") setLocale(lang);
       if (c && ["summary", "notes", "rmw"].includes(c)) setCondition(c);
       if (isResearchTaskId(task)) {
@@ -125,7 +118,7 @@ export function RmwApp() {
         <div className="max-w-md"><SquaresFour size={42} className="mx-auto mb-5 text-primary" /><h1 className="text-2xl font-semibold">{t.desktop}</h1><p className="mt-3 text-muted-foreground">{t.desktopText}</p></div>
       </div>
       <main className="desktop-app min-h-screen">
-        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantCode={participantCode} setParticipantCode={setParticipantCode} onStart={() => {
+        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantCode={participantCode} setParticipantCode={setParticipantCode} deepSeekModel={deepSeekModel} setDeepSeekModel={setDeepSeekModel} onStart={() => {
           const assignedTaskId = assignResearchTaskFromCode(participantCode);
           const assignedTask = getResearchTask(assignedTaskId);
           setTaskId(assignedTaskId);
@@ -133,16 +126,16 @@ export function RmwApp() {
           setChat([{ role: "assistant", text: assignedTask.assistantIntro[locale] }]);
           eventLog("research_task_assigned", { taskId: assignedTaskId, method: "participant_code_hash_v1" }, { stage: "task_setup" });
           setScreen("topics");
-        }} setScreen={setScreen} t={t} />}
+        }} t={t} />}
         {screen === "topics" && <TaskAssignment locale={locale} taskId={taskId} setScreen={setScreen} />}
         {screen === "brief" && <TaskBrief locale={locale} taskId={taskId} setScreen={setScreen} />}
         {screen === "survey" && <Survey locale={locale} taskId={taskId} setScreen={setScreen} t={t} />}
         {screen === "tutorial" && <Tutorial locale={locale} setScreen={setScreen} t={t} />}
-        {screen === "work" && <Workspace key={`work-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="work" memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} fastMode={fastMode} t={t} />}
-        {screen === "checkpoint" && <RmwCheckpoint locale={locale} taskId={taskId} memo={memo} messages={chat} fastMode={fastMode} onContinue={() => setScreen("interruption")} />}
-        {screen === "interruption" && <InterruptionTask locale={locale} fastMode={fastMode} onComplete={() => setScreen("recall")} />}
+        {screen === "work" && <Workspace key={`work-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="work" memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} deepSeekModel={deepSeekModel} t={t} />}
+        {screen === "checkpoint" && <RmwCheckpoint locale={locale} taskId={taskId} memo={memo} messages={chat} testMode={testMode} deepSeekModel={deepSeekModel} onContinue={() => setScreen("interruption")} />}
+        {screen === "interruption" && <InterruptionTask locale={locale} fastMode={testMode} onComplete={() => setScreen("recall")} />}
         {screen === "recall" && <Recall responses={recallResponses} setResponses={setRecallResponses} setScreen={setScreen} t={t} />}
-        {screen === "workspace" && <Workspace key={`recovery-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="recovery" memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} fastMode={fastMode} t={t} />}
+        {screen === "workspace" && <Workspace key={`recovery-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="recovery" memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} deepSeekModel={deepSeekModel} t={t} />}
         {screen === "complete" && <Complete participantCode={participantCode} locale={locale} condition={condition} taskId={taskId} memo={memo} chat={chat} recallResponses={recallResponses} setScreen={setScreen} t={t} />}
       </main>
     </>
@@ -160,16 +153,18 @@ function Landing({
   setLocale,
   participantCode,
   setParticipantCode,
+  deepSeekModel,
+  setDeepSeekModel,
   onStart,
-  setScreen,
   t,
 }: {
   locale: Locale;
   setLocale: (l: Locale) => void;
   participantCode: string;
   setParticipantCode: (code: string) => void;
+  deepSeekModel: DeepSeekModel;
+  setDeepSeekModel: (model: DeepSeekModel) => void;
   onStart: () => void;
-  setScreen: (s: Screen) => void;
   t: typeof copy[Locale];
 }) {
   const [consent, setConsent] = useState(true);
@@ -181,10 +176,13 @@ function Landing({
       </div>
       <div className="rounded-2xl border bg-white/90 p-8 shadow-[0_24px_70px_rgba(34,42,70,.10)] backdrop-blur"><div className="mb-6 flex items-center gap-3"><ShieldCheck size={25} className="text-[var(--active)]"/><div><h2 className="font-semibold">{t.enter}</h2><p className="text-sm text-muted-foreground">Session access is anonymous</p></div></div>
         <label className="text-sm font-medium">{t.code}</label><Input value={participantCode} onChange={e=>setParticipantCode(e.target.value)} className="mt-2 h-12" /><p className="mt-2 text-xs text-muted-foreground">{t.codeHint}</p>
+        <label className="mt-5 block text-sm font-medium" htmlFor="deepseek-model">{locale === "zh-CN" ? "AI 模型" : "AI model"}</label>
+        <select id="deepseek-model" value={deepSeekModel} onChange={event=>setDeepSeekModel(event.target.value as DeepSeekModel)} className="mt-2 h-11 w-full rounded-lg border bg-white px-3 text-sm focus-visible:outline-2 focus-visible:outline-ring">
+          <option value="deepseek-v4-flash">DeepSeek V4 Flash · {locale === "zh-CN" ? "速度优先" : "Faster"}</option>
+          <option value="deepseek-v4-pro">DeepSeek V4 Pro · {locale === "zh-CN" ? "推理优先" : "Stronger reasoning"}</option>
+        </select>
         <label className="mt-6 flex cursor-pointer items-start gap-3 text-sm leading-6"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} className="mt-1 size-4 accent-[var(--primary)]"/><span>{t.consent}</span></label><p className="mt-4 rounded-lg bg-muted/70 p-4 text-xs leading-5 text-muted-foreground">{t.privacy}</p>
         <Button disabled={!consent || !participantCode.trim()} onClick={()=>{eventLog("consent_submitted",{locale});onStart()}} className="mt-6 h-12 w-full">{t.enter}<ArrowRight /></Button>
-        <Button variant="secondary" className="mt-3 h-11 w-full" onClick={()=>{eventLog("full_flow_demo_opened",{}, {stage:"entry"});onStart()}}>{t.flowPreview}<ArrowRight /></Button>
-        <div className="mt-3 grid grid-cols-2 gap-3"><Button variant="outline" onClick={()=>{eventLog("demo_day2_opened",{}, {stage:"entry"});setScreen("workspace")}}>{t.preview}</Button><Link className="inline-flex h-9 items-center justify-center rounded-md px-4 text-sm font-medium hover:bg-muted" href="/admin">{t.admin}</Link></div>
       </div>
     </section>
   </div>;
@@ -270,9 +268,10 @@ function Recall({ responses,setResponses,setScreen,t }: {responses:string[];setR
   return <CenteredShell step="Day 2 · 01:30" title={t.recallTitle}><p className="mb-7 text-sm leading-6 text-muted-foreground">{t.recallSub}</p><div className="space-y-4">{prompts.map((p,i)=><label key={p} className="block"><span className="mb-2 block text-sm font-medium">{i+1}. {p}</span><Textarea rows={2} placeholder="…" value={responses[i]||""} onChange={event=>setResponses(responses.map((value,index)=>index===i?event.target.value:value))}/></label>)}</div><Button className="mt-8 h-12 w-full" onClick={()=>{eventLog("unsupported_recall_submitted",{responses,answeredCount:responses.filter(Boolean).length,responseLengths:responses.map(value=>value.length)},{stage:"unsupported_recall"});eventLog("recovery_support_revealed",{}, {stage:"recovery"});setScreen("workspace")}}>{t.submitRecall}<ArrowRight/></Button></CenteredShell>
 }
 
-function useStageCountdown(key:string,durationSeconds:number) {
+function useStageCountdown(key:string,durationSeconds:number,enabled:boolean) {
   const [remaining,setRemaining]=useState(durationSeconds);
   useEffect(()=>{
+    if(!enabled)return;
     const storageKey=`rmw-timer-${key}`;
     const stored=Number(sessionStorage.getItem(storageKey));
     const endAt=Number.isFinite(stored)&&stored>Date.now()?stored:Date.now()+durationSeconds*1000;
@@ -281,8 +280,8 @@ function useStageCountdown(key:string,durationSeconds:number) {
     update();
     const timer=window.setInterval(update,250);
     return()=>window.clearInterval(timer);
-  },[durationSeconds,key]);
-  return remaining;
+  },[durationSeconds,enabled,key]);
+  return enabled?remaining:durationSeconds;
 }
 
 function formatClock(totalSeconds:number) {
@@ -295,22 +294,56 @@ function WorkspaceGuide({locale,phase,open,onOpenChange}:{locale:Locale;phase:"w
   const chinese=locale==="zh-CN";
   const items=phase==="work"
     ?[
-      [BookOpenText,chinese?"材料":"Materials",chinese?"阅读 5 段材料，点击卡片可展开全文；系统记录阅读行为。":"Read all five sources; open a card for the full text."],
-      [Sparkle,chinese?"AI 助手":"AI assistant",chinese?"用于比较框架、核查证据和标记不确定性，不替你写最终答案。":"Compare framings, check evidence, and mark uncertainty."],
-      [NotePencil,chinese?"工作区":"Workspace",chinese?"持续记录候选框架、假设、存疑点、排除方向和下一步。":"Record framings, hypotheses, uncertainty, rejected paths, and next action."],
-      [Target,chinese?"第一阶段目标":"Phase 1 goals",chinese?"倒计时进入最后 3 分钟后，才可打开保存窗口。":"The save window opens only in the final three minutes."],
+      ["materials",BookOpenText,chinese?"材料":"Materials",chinese?"阅读 5 段材料。点击任意材料卡片即可查看完整内容，系统会记录阅读进度。":"Read the five sources. Open any material card to see its full content."],
+      ["chat",Sparkle,chinese?"AI 助手":"AI assistant",chinese?"在这里比较问题框架、核查证据并标记不确定性。AI 不会替你完成最终答案。":"Compare framings, check evidence, and mark uncertainty here."],
+      ["memo",NotePencil,chinese?"研究备忘录":"Research memo",chinese?"随时记录候选框架、假设、排除方向和下一步，内容会自动保存。":"Record framings, hypotheses, rejected paths, and next actions. Changes autosave."],
+      ["support",Target,chinese?"第一阶段目标":"Phase 1 goals",chinese?"这里帮助你检查当前任务要求。测试模式下可以随时进入保存窗口。":"Use this checklist to review the task. Test mode lets you open the save window at any time."],
     ]
     :[
-      [BookOpenText,chinese?"材料":"Materials",chinese?"回到证据原文，避免只凭恢复摘要继续。":"Return to source evidence instead of relying only on the brief."],
-      [NotePencil,chinese?"工作区":"Workspace",chinese?"继续完成 600–900 字研究 memo。":"Complete the 600–900 word research memo."],
-      [Brain,chinese?"恢复支持":"Recovery support",chinese?"先看恢复摘要，再按需查看推理状态和知识网络。":"Start with the brief, then inspect problem state and network."],
-      [Timer,chinese?"完成门槛":"Completion gate",chinese?"倒计时剩余 7 分钟后才可完成研究。":"Completion opens when seven minutes remain."],
+      ["materials",BookOpenText,chinese?"材料":"Materials",chinese?"需要核对结论时回到证据原文，避免只依赖恢复摘要。":"Return to the source when checking a claim."],
+      ["chat",Sparkle,chinese?"AI 助手":"AI assistant",chinese?"继续向 AI 追问证据、替代解释和仍未验证的问题。":"Continue asking about evidence, alternatives, and open questions."],
+      ["memo",NotePencil,chinese?"研究备忘录":"Research memo",chinese?"在这里继续完成 600–900 字研究 memo，修改会自动保存。":"Complete the 600–900 word memo here. Changes autosave."],
+      ["support",Brain,chinese?"推理恢复支持":"Reasoning recovery",chinese?"通过恢复摘要、推理卡片和知识网络找回中断前的推理位置。":"Use the brief, cards, and network to recover your prior reasoning position."],
     ];
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-2xl">
-    <DialogHeader><DialogTitle>{chinese?"工作区功能说明":"Workspace guide"}</DialogTitle><DialogDescription>{chinese?"每一块只承担一种任务；需要时可点击右上角“？”再次查看。":"Each area has one job. Reopen this guide from the help button."}</DialogDescription></DialogHeader>
-    <div className="grid grid-cols-2 gap-3">{items.map(([I,title,description],index)=>{const Icon=I as typeof Brain;return <div key={String(title)} className="rounded-xl border bg-[#fbfcfe] p-4"><div className="flex items-center gap-2"><span className="grid size-7 place-items-center rounded-lg bg-secondary text-primary"><Icon size={16}/></span><span className="text-xs font-semibold text-muted-foreground">0{index+1}</span></div><h3 className="mt-3 font-semibold">{String(title)}</h3><p className="mt-1 text-xs leading-5 text-muted-foreground">{String(description)}</p></div>})}</div>
-    <DialogFooter><Button onClick={()=>onOpenChange(false)}>{chinese?"我知道了":"Got it"}</Button></DialogFooter>
-  </DialogContent></Dialog>;
+  const [step,setStep]=useState(0);
+  const [rect,setRect]=useState<DOMRect|null>(null);
+  const targetId=String(items[step][0]);
+  useEffect(()=>{
+    if(!open)return;
+    const update=()=>{
+      const target=document.querySelector(`[data-tour="${targetId}"]`);
+      if(target)setRect(target.getBoundingClientRect());
+    };
+    const frame=requestAnimationFrame(update);
+    window.addEventListener("resize",update);
+    return()=>{cancelAnimationFrame(frame);window.removeEventListener("resize",update);};
+  },[open,targetId]);
+  if(!open||!rect)return null;
+  const [,I,title,description]=items[step];
+  const Icon=I as typeof Brain;
+  const gap=8;
+  const top=Math.max(0,rect.top-gap);
+  const left=Math.max(0,rect.left-gap);
+  const right=Math.min(window.innerWidth,rect.right+gap);
+  const bottom=Math.min(window.innerHeight,rect.bottom+gap);
+  const calloutOnRight=right+340<window.innerWidth;
+  const calloutStyle={
+    top:`${Math.max(16,Math.min(window.innerHeight-260,rect.top+18))}px`,
+    left:calloutOnRight?`${right+18}px`:`${Math.max(16,left-338)}px`,
+  };
+  const finish=()=>{setStep(0);eventLog("workspace_tour_completed",{phase},{stage:phase});onOpenChange(false);};
+  return <div className="fixed inset-0 z-[80]" role="dialog" aria-modal="true" aria-label={chinese?"工作区分步导览":"Workspace tour"}>
+    <div className="absolute bg-slate-950/55 backdrop-blur-[2px]" style={{inset:"0 0 auto 0",height:top}}/>
+    <div className="absolute bg-slate-950/55 backdrop-blur-[2px]" style={{top,left:0,width:left,height:bottom-top}}/>
+    <div className="absolute bg-slate-950/55 backdrop-blur-[2px]" style={{top,left:right,right:0,height:bottom-top}}/>
+    <div className="absolute bg-slate-950/55 backdrop-blur-[2px]" style={{top:bottom,left:0,right:0,bottom:0}}/>
+    <div className="pointer-events-none absolute rounded-2xl ring-4 ring-white shadow-[0_0_0_2px_var(--primary),0_18px_70px_rgba(13,22,48,.32)]" style={{top,left,width:right-left,height:bottom-top}}/>
+    <aside className="absolute w-80 rounded-2xl border bg-white p-5 shadow-[0_24px_80px_rgba(10,18,44,.28)]" style={calloutStyle}>
+      <div className="flex items-center justify-between"><span className="grid size-10 place-items-center rounded-xl bg-secondary text-primary"><Icon size={21}/></span><span className="text-xs font-semibold text-muted-foreground">{step+1} / {items.length}</span></div>
+      <h2 className="mt-4 text-lg font-semibold">{String(title)}</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">{String(description)}</p>
+      <div className="mt-5 flex items-center justify-between"><Button variant="ghost" size="sm" onClick={finish}>{chinese?"退出导览":"Exit"}</Button><Button size="sm" onClick={()=>step===items.length-1?finish():setStep(current=>current+1)}>{step===items.length-1?(chinese?"完成":"Done"):(chinese?"下一步":"Next")}<ArrowRight/></Button></div>
+    </aside>
+  </div>;
 }
 
 function Workspace({
@@ -323,7 +356,8 @@ function Workspace({
   chat,
   setChat,
   setScreen,
-  fastMode,
+  testMode,
+  deepSeekModel,
   t,
 }: {
   locale: Locale;
@@ -335,7 +369,8 @@ function Workspace({
   chat: ChatMessage[];
   setChat: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   setScreen: (screen: Screen) => void;
-  fastMode: boolean;
+  testMode: boolean;
+  deepSeekModel: DeepSeekModel;
   t: typeof copy[Locale];
 }) {
   const [cards,setCards]=useState(()=>createInitialCards(taskId));
@@ -343,9 +378,9 @@ function Workspace({
   const [message,setMessage]=useState("");
   const [isLoading,setIsLoading]=useState(false);
   const [guideOpen,setGuideOpen]=useState(true);
-  const phaseDuration=fastMode?20:20*60;
-  const recoveryDuration=fastMode?20:15*60;
-  const remaining=useStageCountdown(`${phase}-${taskId}`,phase==="work"?phaseDuration:recoveryDuration);
+  const phaseDuration=10*60;
+  const recoveryDuration=15*60;
+  const remaining=useStageCountdown(`${phase}-${taskId}`,phase==="work"?phaseDuration:recoveryDuration,!testMode);
   const updateStatus=(id:string,status:EpistemicStatus)=>{setCards(cs=>cs.map(c=>c.id===id?{...c,status,revision:c.revision+1}:c));eventLog("card_status_changed",{status},{stage:"recovery",targetType:"reasoning_card",targetId:id})};
   const togglePin=(id:string)=>{setCards(cs=>cs.map(c=>c.id===id?{...c,priority:c.priority==="pinned"?"normal":"pinned",revision:c.revision+1}:c));eventLog("card_pin_toggled",{id},{stage:"recovery",targetType:"reasoning_card",targetId:id})};
   const updateContent=(id:string,value:string)=>{setCards(cs=>cs.map(c=>c.id===id?{...c,content:{...c.content,[locale]:value},revision:c.revision+1}:c));eventLog("card_content_edited",{locale},{stage:"recovery",targetType:"reasoning_card",targetId:id})};
@@ -364,6 +399,7 @@ function Workspace({
         body:JSON.stringify({
           locale,
           taskId,
+          model:deepSeekModel,
           messages:history.map(item=>({role:item.role,content:item.text})),
         }),
       });
@@ -380,15 +416,16 @@ function Workspace({
   };
   return <div className="h-screen min-h-[720px] overflow-hidden bg-[#f8f7f3]">
     <WorkspaceGuide locale={locale} phase={phase} open={guideOpen} onOpenChange={setGuideOpen}/>
-    <header className="flex h-[68px] items-center justify-between border-b bg-white/90 px-5"><div className="flex items-center gap-4"><Brand/>{phase==="work"&&<Badge variant="secondary" className="rounded-full">{locale==="zh-CN"?"第一阶段":"Phase 1"}</Badge>}</div><div className="flex items-center gap-5 text-sm"><span className="flex items-center gap-2 font-mono text-primary"><Timer size={18}/>{formatClock(remaining)}</span><span className="flex items-center gap-2 text-[var(--active)]"><CheckCircle size={18}/>{t.saved}</span><span className="flex items-center gap-2 text-muted-foreground"><Globe size={18}/>{locale==="zh-CN"?"中文":"English"}</span><button onClick={()=>setGuideOpen(true)} aria-label={t.help} className="grid size-10 place-items-center rounded-lg hover:bg-muted"><Question size={20}/></button></div></header>
-    <div className="workspace-grid grid h-[calc(100vh-68px)] min-h-0 overflow-hidden">
+    <header className="flex h-[68px] items-center justify-between border-b bg-white/90 px-5"><div className="flex items-center gap-4"><Brand/>{phase==="work"&&<Badge variant="secondary" className="rounded-full">{locale==="zh-CN"?"第一阶段":"Phase 1"}</Badge>}<Badge variant="outline" className="rounded-full bg-white text-[10px]">{deepSeekModel==="deepseek-v4-pro"?"V4 Pro":"V4 Flash"}</Badge></div><div className="flex items-center gap-5 text-sm"><span className="flex items-center gap-2 font-mono text-primary"><Timer size={18}/>{testMode?(locale==="zh-CN"?"测试模式":"Test mode"):formatClock(remaining)}</span><span className="flex items-center gap-2 text-[var(--active)]"><CheckCircle size={18}/>{t.saved}</span><span className="flex items-center gap-2 text-muted-foreground"><Globe size={18}/>{locale==="zh-CN"?"中文":"English"}</span><button onClick={()=>setGuideOpen(true)} aria-label={t.help} className="grid size-10 place-items-center rounded-lg hover:bg-muted"><Question size={20}/></button></div></header>
+    <ExperimentTimeline locale={locale} active={phase==="work"?"task":"resume"} compact/>
+    <div className="workspace-grid grid h-[calc(100vh-120px)] min-h-0 overflow-hidden">
       <MaterialsPanel locale={locale} taskId={taskId} t={t}/>
       <ChatPanel locale={locale} chat={chat} message={message} setMessage={setMessage} send={send} isLoading={isLoading} t={t}/>
       <section className="grid min-h-0 min-w-0 grid-rows-[minmax(0,38%)_minmax(0,62%)] overflow-hidden bg-white">
         <MemoPanel locale={locale} memo={memo} setMemo={setMemo} t={t}/>
         {phase==="work"
-          ?<PhaseOnePanel locale={locale} taskId={taskId} memo={memo} remaining={remaining} unlockAt={fastMode?5:3*60} setScreen={setScreen}/>
-          :<RecoveryPanel locale={locale} condition={condition} cards={cards} selected={selected} setSelected={setSelected} updateStatus={updateStatus} togglePin={togglePin} updateContent={updateContent} remaining={remaining} unlockAt={fastMode?5:7*60} setScreen={setScreen} t={t}/>}
+          ?<PhaseOnePanel locale={locale} taskId={taskId} memo={memo} remaining={remaining} unlockAt={3*60} testMode={testMode} setScreen={setScreen}/>
+          :<RecoveryPanel locale={locale} condition={condition} cards={cards} selected={selected} setSelected={setSelected} updateStatus={updateStatus} togglePin={togglePin} updateContent={updateContent} remaining={remaining} unlockAt={7*60} testMode={testMode} setScreen={setScreen} t={t}/>}
       </section>
     </div>
   </div>
@@ -404,7 +441,7 @@ function MaterialsPanel({locale,taskId,t}:{locale:Locale;taskId:ResearchTaskId;t
     setRead(current=>new Set([...current,id]));
     eventLog("material_opened",{id,taskId},{stage:"research_work",targetType:"material",targetId:id});
   };
-  return <aside className="min-h-0 min-w-0 overflow-hidden border-r bg-[#fbfaf7]">
+  return <aside data-tour="materials" className="min-h-0 min-w-0 overflow-hidden border-r bg-[#fbfaf7]">
     <div className="flex h-14 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><BookOpenText size={20}/>{t.materials}</h2><Badge variant="outline" className="text-[10px]">5 passages</Badge></div>
     <div className="px-5 py-4"><div className="mb-2 flex justify-between text-xs text-muted-foreground"><span>{t.progress}</span><span>{read.size} / {materials.length}</span></div><Progress value={(read.size/materials.length)*100} className="h-1.5"/></div>
     <div className="hide-scrollbar h-[calc(100%-118px)] overflow-y-auto px-3 pb-4">{materials.map(material=><button key={material.id} onClick={()=>openMaterial(material.id)} className={`mb-2 w-full rounded-xl px-3 py-4 text-left transition ${active===material.id?"bg-white shadow-[0_5px_18px_rgba(35,43,70,.07)] ring-1 ring-primary/15":"hover:bg-white/80"}`}><div className="mb-2 flex items-center justify-between"><span className="grid size-6 place-items-center rounded-md bg-secondary text-xs font-semibold text-primary">{material.n}</span>{read.has(material.id)&&<span className="flex items-center gap-1 text-[10px] text-[var(--active)]"><Check size={12}/>{locale==="zh-CN"?"已阅读":"Read"}</span>}</div><h3 className="text-sm font-semibold leading-5">{material.title[locale]}</h3><p className={`mt-2 whitespace-pre-line text-xs leading-5 text-muted-foreground ${active===material.id?"":"line-clamp-3"}`}>{material.excerpt[locale]}</p><p className="mt-3 text-[10px] text-primary">{material.meta[locale]}</p></button>)}</div>
@@ -412,26 +449,26 @@ function MaterialsPanel({locale,taskId,t}:{locale:Locale;taskId:ResearchTaskId;t
 }
 
 function ChatPanel({locale,chat,message,setMessage,send,isLoading,t}:{locale:Locale;chat:ChatMessage[];message:string;setMessage:(s:string)=>void;send:()=>void;isLoading:boolean;t:typeof copy[Locale]}) {
-  return <section className="flex min-h-0 min-w-0 flex-col overflow-hidden border-r bg-white">
+  return <section data-tour="chat" className="flex min-h-0 min-w-0 flex-col overflow-hidden border-r bg-white">
     <div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><Sparkle size={19} className="text-primary" weight="fill"/>{t.chat}</h2><Badge variant="outline" className="text-[10px]">DeepSeek</Badge></div>
     <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-5">
       <div className="mb-5 flex items-center gap-3 text-[10px] uppercase tracking-wider text-muted-foreground"><div className="h-px flex-1 bg-border"/>Research session<div className="h-px flex-1 bg-border"/></div>
       {chat.map((item,index)=><div key={`${item.role}-${index}`} className={`mb-4 flex ${item.role==="user"?"justify-end":"justify-start"}`}><div className={`max-w-[88%] whitespace-pre-wrap rounded-xl px-4 py-3 text-sm leading-6 ${item.role==="user"?"bg-secondary text-secondary-foreground":"bg-[#f5f6f8]"}`}>{item.text}</div></div>)}
       {isLoading&&<div className="mb-4 flex justify-start"><div className="rounded-xl bg-[#f5f6f8] px-4 py-3 text-xs text-muted-foreground"><Sparkle size={14} className="mr-2 inline animate-pulse text-primary"/>{locale==="zh-CN"?"DeepSeek 正在对照材料…":"DeepSeek is comparing the evidence…"}</div></div>}
     </div>
-    <div className="shrink-0 p-4 pt-0"><div className="rounded-xl border bg-white p-3 shadow-[0_8px_30px_rgba(35,43,70,.06)]"><Textarea value={message} disabled={isLoading} onChange={event=>setMessage(event.target.value)} onKeyDown={event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();send()}}} rows={2} className="resize-none border-0 bg-transparent p-1 shadow-none focus-visible:ring-0" placeholder={t.ask}/><div className="mt-2 flex items-center justify-between"><span className="text-[10px] text-muted-foreground">{locale==="zh-CN"?"请让 AI 引用材料编号并区分证据与推断":"Ask AI to cite material numbers and separate evidence from inference"}</span><Button size="icon" onClick={send} disabled={isLoading||!message.trim()} aria-label="Send"><PaperPlaneTilt size={18} weight="fill"/></Button></div></div><p className="mt-2 text-center text-[10px] text-muted-foreground">{t.disclaimer}</p></div>
+    <div className="shrink-0 border-t bg-[#fcfcfd] px-4 pb-3 pt-3"><div className="flex items-end gap-2"><Textarea value={message} disabled={isLoading} onChange={event=>setMessage(event.target.value)} onKeyDown={event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();send()}}} rows={2} className="min-h-[72px] flex-1 resize-none rounded-xl border bg-white px-3 py-2.5 shadow-none focus-visible:ring-2" placeholder={t.ask}/><Button size="icon" className="mb-0.5 size-10 shrink-0 rounded-xl" onClick={send} disabled={isLoading||!message.trim()} aria-label="Send"><PaperPlaneTilt size={18} weight="fill"/></Button></div><p className="mt-2 text-center text-[10px] text-muted-foreground">{t.disclaimer}</p></div>
   </section>;
 }
 
 function MemoPanel({locale,memo,setMemo,t}:{locale:Locale;memo:string;setMemo:(s:string)=>void;t:typeof copy[Locale]}) {
   const count=locale==="zh-CN"?memo.replace(/\s/g,"").length:(memo.trim()?memo.trim().split(/\s+/).length:0);
-  return <div className="min-h-0 border-b bg-white">
+  return <div data-tour="memo" className="min-h-0 border-b bg-white">
     <div className="flex h-14 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><NotePencil size={20}/>{t.memo}</h2><span className="flex items-center gap-2 text-xs text-muted-foreground"><Check size={15}/>{t.saved} · {locale==="zh-CN"?"目标 600–900 字":"Target 600–900 words"}</span></div>
     <div className="h-[calc(100%-56px)] px-6 py-4"><Textarea value={memo} onChange={event=>{const next=event.target.value;const nextCount=locale==="zh-CN"?next.replace(/\s/g,"").length:(next.trim()?next.trim().split(/\s+/).length:0);setMemo(next);eventLog("memo_edited",{count:nextCount},{stage:"research_work",targetType:"memo"})}} className="h-full resize-none border-0 p-0 pb-7 text-[15px] leading-7 shadow-none focus-visible:ring-0" placeholder={t.memoPlaceholder}/><div className="-mt-6 text-right font-mono text-[10px] text-muted-foreground">{count} {t.words} · 600–900</div></div>
   </div>;
 }
 
-function PhaseOnePanel({locale,taskId,memo,remaining,unlockAt,setScreen}:{locale:Locale;taskId:ResearchTaskId;memo:string;remaining:number;unlockAt:number;setScreen:(screen:Screen)=>void}) {
+function PhaseOnePanel({locale,taskId,memo,remaining,unlockAt,testMode,setScreen}:{locale:Locale;taskId:ResearchTaskId;memo:string;remaining:number;unlockAt:number;testMode:boolean;setScreen:(screen:Screen)=>void}) {
   const task=getResearchTask(taskId);
   const [completed,setCompleted]=useState<Set<number>>(()=>new Set());
   const [lockNotice,setLockNotice]=useState(false);
@@ -442,7 +479,7 @@ function PhaseOnePanel({locale,taskId,memo,remaining,unlockAt,setScreen}:{locale
     return next;
   });
   const memoCount=locale==="zh-CN"?memo.replace(/\s/g,"").length:(memo.trim()?memo.trim().split(/\s+/).length:0);
-  return <section className="flex min-h-0 flex-col bg-[#fbfcfe]">
+  return <section data-tour="support" className="flex min-h-0 flex-col bg-[#fbfcfe]">
     <div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><Target size={20} className="text-primary"/>{locale==="zh-CN"?"第一阶段目标":"Phase 1 goals"}</h2><Badge variant="outline" className="bg-white text-[10px]">{completed.size} / {phaseOneGoals.length}</Badge></div>
     <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
       <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-4"><p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-700">{task.label[locale]} · Research question</p><p className="mt-2 text-sm font-semibold leading-6 text-indigo-950">{task.question[locale]}</p></div>
@@ -450,10 +487,10 @@ function PhaseOnePanel({locale,taskId,memo,remaining,unlockAt,setScreen}:{locale
       <details className="mt-4 rounded-xl border bg-white p-4"><summary className="cursor-pointer text-xs font-semibold">{locale==="zh-CN"?"查看最终 memo 的 6 个问题":"View the six final-memo questions"}</summary><ol className="mt-3 space-y-2 text-xs leading-5 text-muted-foreground">{memoQuestions.map((question,index)=><li key={question[locale]}>{index+1}. {question[locale]}</li>)}</ol></details>
     </div>
     <div className="shrink-0 border-t bg-white px-5 py-3">
-      <div className="mb-2 flex justify-between text-[10px] text-muted-foreground"><span>{locale==="zh-CN"?"当前工作区":"Current workspace"}</span><span>{remaining<=unlockAt?(locale==="zh-CN"?"保存窗口已开放":"Save window open"):(locale==="zh-CN"?`最后 3 分钟开放 · ${formatClock(remaining)}`:`Opens in final 3 minutes · ${formatClock(remaining)}`)}</span></div>
-      {lockNotice&&remaining>unlockAt&&<p role="status" className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] leading-4 text-amber-800">{locale==="zh-CN"?"倒计时进入最后 3 分钟后，才可以进入保存窗口。请继续完成当前推理。":"The save window opens only in the final three minutes. Continue your reasoning for now."}</p>}
-      <Button variant={remaining<=unlockAt?"default":"secondary"} className="h-11 w-full text-sm" onClick={()=>{
-        if(remaining>unlockAt){setLockNotice(true);eventLog("checkpoint_open_blocked",{remaining},{stage:"research_work"});return;}
+      <div className="mb-2 flex justify-between text-[10px] text-muted-foreground"><span>{locale==="zh-CN"?"当前工作区":"Current workspace"}</span><span>{testMode?(locale==="zh-CN"?"测试模式 · 可直接进入":"Test mode · Open anytime"):remaining<=unlockAt?(locale==="zh-CN"?"保存窗口已开放":"Save window open"):(locale==="zh-CN"?`最后 3 分钟开放 · ${formatClock(remaining)}`:`Opens in final 3 minutes · ${formatClock(remaining)}`)}</span></div>
+      {!testMode&&lockNotice&&remaining>unlockAt&&<p role="status" className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] leading-4 text-amber-800">{locale==="zh-CN"?"倒计时进入最后 3 分钟后，才可以进入保存窗口。请继续完成当前推理。":"The save window opens only in the final three minutes. Continue your reasoning for now."}</p>}
+      <Button variant={testMode||remaining<=unlockAt?"default":"secondary"} className="h-11 w-full text-sm" onClick={()=>{
+        if(!testMode&&remaining>unlockAt){setLockNotice(true);eventLog("checkpoint_open_blocked",{remaining},{stage:"research_work"});return;}
         eventLog("phase_one_checkpoint_requested",{taskId,completedGoals:completed.size,memoCount,remaining},{stage:"research_work"});
         setScreen("checkpoint");
       }}>{locale==="zh-CN"?"进入保存窗口":"Open save window"}<ArrowRight size={17}/></Button>
@@ -461,7 +498,7 @@ function PhaseOnePanel({locale,taskId,memo,remaining,unlockAt,setScreen}:{locale
   </section>;
 }
 
-function RecoveryPanel({locale,condition,cards,selected,setSelected,updateStatus,togglePin,updateContent,remaining,unlockAt,setScreen,t}:{locale:Locale;condition:Condition;cards:ReasoningCard[];selected:string;setSelected:(s:string)=>void;updateStatus:(id:string,s:EpistemicStatus)=>void;togglePin:(id:string)=>void;updateContent:(id:string,value:string)=>void;remaining:number;unlockAt:number;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
+function RecoveryPanel({locale,condition,cards,selected,setSelected,updateStatus,togglePin,updateContent,remaining,unlockAt,testMode,setScreen,t}:{locale:Locale;condition:Condition;cards:ReasoningCard[];selected:string;setSelected:(s:string)=>void;updateStatus:(id:string,s:EpistemicStatus)=>void;togglePin:(id:string)=>void;updateContent:(id:string,value:string)=>void;remaining:number;unlockAt:number;testMode:boolean;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
   const main=cards.find(card=>card.goalLevel==="main");
   const position=cards.filter(card=>card.goalLevel==="subgoal"&&card.status!=="expired").slice(0,2).map(card=>card.content[locale]).join("；");
   const uncertain=cards.find(card=>card.status==="uncertain");
@@ -473,16 +510,16 @@ function RecoveryPanel({locale,condition,cards,selected,setSelected,updateStatus
   const notes=locale==="zh-CN"
     ?`当前目标：${main?.content[locale]||"—"}\n推理位置：${position||"—"}\n存疑：${uncertain?.content[locale]||"—"}\n已排除：${ruled?.content[locale]||"—"}\n下一步：${next?.content[locale]||"—"}`
     :`Current goal: ${main?.content[locale]||"—"}\nReasoning position: ${position||"—"}\nUncertain: ${uncertain?.content[locale]||"—"}\nRuled out: ${ruled?.content[locale]||"—"}\nNext step: ${next?.content[locale]||"—"}`;
-  if(condition==="summary") return <RecoveryShell t={t}><div className="mx-6 mt-4 rounded-xl bg-muted/60 p-5"><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Auto Summary</p><p className="mt-3 text-sm leading-7">{summary}</p></div><PrimaryContinue remaining={remaining} unlockAt={unlockAt} setScreen={setScreen} t={t}/></RecoveryShell>;
-  if(condition==="notes") return <RecoveryShell t={t}><div className="mx-6 mt-4"><p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Your notes</p><Textarea className="min-h-40 leading-7" defaultValue={notes}/></div><PrimaryContinue remaining={remaining} unlockAt={unlockAt} setScreen={setScreen} t={t}/></RecoveryShell>;
-  return <RecoveryShell t={t}><Tabs defaultValue="brief" className="flex min-h-0 flex-1 flex-col"><div className="flex items-center justify-between border-b px-5"><TabsList className="h-11 bg-transparent p-0"><TabsTrigger className="h-11 rounded-none border-b-2 border-transparent px-3 data-active:border-primary data-active:bg-transparent" value="brief">{t.resume}</TabsTrigger><TabsTrigger className="h-11 rounded-none border-b-2 border-transparent px-3 data-active:border-primary data-active:bg-transparent" value="cards">{t.cards}</TabsTrigger><TabsTrigger className="h-11 rounded-none border-b-2 border-transparent px-3 data-active:border-primary data-active:bg-transparent" value="network">{t.network}</TabsTrigger></TabsList><span className="text-[10px] text-muted-foreground">{cards.length} {t.allCards}</span></div>
+  if(condition==="summary") return <RecoveryShell t={t}><div className="mx-6 mt-4 rounded-xl bg-muted/60 p-5"><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Auto Summary</p><p className="mt-3 text-sm leading-7">{summary}</p></div><PrimaryContinue remaining={remaining} unlockAt={unlockAt} testMode={testMode} setScreen={setScreen} t={t}/></RecoveryShell>;
+  if(condition==="notes") return <RecoveryShell t={t}><div className="mx-6 mt-4"><p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Your notes</p><Textarea className="min-h-40 leading-7" defaultValue={notes}/></div><PrimaryContinue remaining={remaining} unlockAt={unlockAt} testMode={testMode} setScreen={setScreen} t={t}/></RecoveryShell>;
+  return <RecoveryShell t={t}><Tabs defaultValue="brief" className="flex min-h-0 flex-1 flex-col"><div className="flex items-center justify-between border-b bg-white px-4 py-2"><TabsList className="h-10 rounded-xl bg-secondary/70 p-1"><TabsTrigger className="h-8 min-w-24 rounded-lg border-0 px-3 text-xs data-active:bg-white data-active:text-primary data-active:shadow-sm" value="brief"><Brain weight="duotone"/>{t.resume}</TabsTrigger><TabsTrigger className="h-8 min-w-24 rounded-lg border-0 px-3 text-xs data-active:bg-white data-active:text-primary data-active:shadow-sm" value="cards"><SquaresFour weight="duotone"/>{t.cards}</TabsTrigger><TabsTrigger className="h-8 min-w-24 rounded-lg border-0 px-3 text-xs data-active:bg-white data-active:text-primary data-active:shadow-sm" value="network"><Graph weight="duotone"/>{t.network}</TabsTrigger></TabsList><span className="rounded-full bg-muted px-2.5 py-1 text-[10px] text-muted-foreground">{cards.length} {t.allCards}</span></div>
     <TabsContent value="brief" className="m-0 min-h-0 flex-1 overflow-auto"><ResumeBrief locale={locale} cards={cards} t={t}/></TabsContent>
     <TabsContent value="cards" className="m-0 grid min-h-0 flex-1 grid-cols-[1.18fr_.82fr]"><div className="hide-scrollbar min-h-0 overflow-y-auto border-r px-4 py-3"><div className="mb-3 rounded-lg bg-secondary/70 p-3 text-xs leading-5 text-secondary-foreground"><strong>{t.ready}：</strong>{t.readFirst}</div><GoalHierarchy cards={cards} locale={locale} selected={selected} setSelected={setSelected}/><p className="mb-2 mt-4 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Problem state cards</p>{cards.filter(card=>card.cardType!=="goal").map(card=><ReasoningCardView key={card.id} card={card} locale={locale} selected={selected===card.id} onSelect={()=>{setSelected(card.id);eventLog("card_selected",{id:card.id},{stage:"recovery",targetType:"reasoning_card",targetId:card.id})}} updateStatus={updateStatus} t={t}/>)}</div><CardInspector key={`${selected}-${locale}`} card={cards.find(card=>card.id===selected) || cards[0]} locale={locale} updateStatus={updateStatus} togglePin={togglePin} updateContent={updateContent} t={t}/></TabsContent>
     <TabsContent value="network" className="m-0 min-h-0 flex-1"><KnowledgeNetwork locale={locale} cards={cards} selected={selected} setSelected={setSelected}/></TabsContent>
-  </Tabs><PrimaryContinue remaining={remaining} unlockAt={unlockAt} setScreen={setScreen} t={t}/></RecoveryShell>;
+  </Tabs><PrimaryContinue remaining={remaining} unlockAt={unlockAt} testMode={testMode} setScreen={setScreen} t={t}/></RecoveryShell>;
 }
 
-function RecoveryShell({children,t}:{children:React.ReactNode;t:typeof copy[Locale]}) { return <div className="flex min-h-0 flex-col bg-[#fbfcfe]"><div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><div><h2 className="flex items-center gap-2 font-semibold"><Brain size={20} className="text-primary"/>{t.recovery}</h2></div><Badge variant="outline" className="bg-white text-[10px]"><Clock size={13}/>24h</Badge></div>{children}</div> }
+function RecoveryShell({children,t}:{children:React.ReactNode;t:typeof copy[Locale]}) { return <div data-tour="support" className="flex min-h-0 flex-col bg-[#fbfcfe]"><div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><div><h2 className="flex items-center gap-2 font-semibold"><Brain size={20} className="text-primary"/>{t.recovery}</h2></div><Badge variant="outline" className="bg-white text-[10px]"><Clock size={13}/>24h</Badge></div>{children}</div> }
 
 function ResumeBrief({locale,cards,t}:{locale:Locale;cards:ReasoningCard[];t:typeof copy[Locale]}) {
   const main=cards.find(card=>card.goalLevel==="main");
@@ -537,13 +574,13 @@ const flowPositions:Record<string,{x:number;y:number}>={
 };
 function KnowledgeNetwork({locale,cards,selected,setSelected,compact=false}:{locale:Locale;cards:ReasoningCard[];selected:string;setSelected:(s:string)=>void;compact?:boolean}) { const nodes=useMemo<Node<FlowData>[]>(()=>cards.map(c=>({id:c.id,type:"reason",position:flowPositions[c.id]||{x:0,y:0},data:{label:c.content[locale],status:c.status,selected:c.id===selected}})),[cards,locale,selected]); const edges=useMemo<Edge[]>(()=>relations.map(r=>({id:r.id,source:r.sourceCardId,target:r.targetCardId,label:compact?undefined:r.relationType,animated:r.relationType==="leads_to",style:{stroke:r.relationType==="challenges"?"#c58a2c":"#8a93a5"},labelStyle:{fontSize:9,fill:"#6b7280"}})),[compact]); return <div className="h-full min-h-0 bg-[#fcfcfd]"><ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView minZoom={.45} maxZoom={1.4} onNodeClick={(_,n)=>{setSelected(n.id);eventLog("network_node_clicked",{id:n.id})}}><Background gap={22} size={1} color="#e8eaf0"/>{!compact&&<Controls position="bottom-right" showInteractive={false}/>}</ReactFlow></div> }
 
-function PrimaryContinue({remaining,unlockAt,setScreen,t}:{remaining:number;unlockAt:number;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
+function PrimaryContinue({remaining,unlockAt,testMode,setScreen,t}:{remaining:number;unlockAt:number;testMode:boolean;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
   const [notice,setNotice]=useState(false);
   const chinese=t.continue==="完成研究";
   return <div className="shrink-0 border-t bg-white px-5 py-3">
-    {notice&&remaining>unlockAt&&<p role="status" className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-800">{chinese?`倒计时剩余 7 分钟后才可完成研究。当前剩余 ${formatClock(remaining)}。`:`You can complete the study when seven minutes remain. Current time: ${formatClock(remaining)}.`}</p>}
-    <Button variant={remaining<=unlockAt?"default":"secondary"} className="h-11 w-full text-sm" onClick={()=>{
-      if(remaining>unlockAt){setNotice(true);eventLog("study_completion_blocked",{remaining},{stage:"recovery"});return;}
+    {!testMode&&notice&&remaining>unlockAt&&<p role="status" className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-800">{chinese?`倒计时剩余 7 分钟后才可完成研究。当前剩余 ${formatClock(remaining)}。`:`You can complete the study when seven minutes remain. Current time: ${formatClock(remaining)}.`}</p>}
+    <Button variant={testMode||remaining<=unlockAt?"default":"secondary"} className="h-11 w-full text-sm" onClick={()=>{
+      if(!testMode&&remaining>unlockAt){setNotice(true);eventLog("study_completion_blocked",{remaining},{stage:"recovery"});return;}
       eventLog("study_completion_requested",{remaining},{stage:"recovery"});
       setScreen("complete");
     }}>{t.continue}<ArrowRight size={17}/></Button>
