@@ -171,112 +171,171 @@ function TaskBrief({locale,taskId,setScreen}:{locale:Locale;taskId:ResearchTaskI
   </CenteredShell>;
 }
 
+type SurveyItem = {
+  id: string;
+  text: string;
+  anchors: string[];
+  subscale?: string;
+};
+
+type SurveyGroup = {
+  id: string;
+  title: string;
+  instruction: string;
+  source: string;
+  sourceUrl?: string;
+  sourceLabel?: string;
+  items: SurveyItem[];
+};
+
 function Survey({ locale, taskId, setScreen, t }: { locale:Locale;taskId:ResearchTaskId;setScreen:(s:Screen)=>void;t:typeof copy[Locale] }) {
-  const groups = locale === "zh-CN" ? [
+  const agreementZh=["非常不同意","不同意","一般","同意","非常同意"];
+  const confidenceZh=["完全没信心","较没信心","一般","较有信心","非常有信心"];
+  const familiarityZh=["完全不符合","较不符合","一般","较符合","非常符合"];
+  const agreementEn=["Strongly disagree","Disagree","Neutral","Agree","Strongly agree"];
+  const confidenceEn=["No confidence","Low confidence","Moderate","High confidence","Complete confidence"];
+  const familiarityEn=["Not at all","Slightly","Moderately","Very","Extremely"];
+
+  const groups:SurveyGroup[] = locale === "zh-CN" ? [
     {
-      id: "ai_literacy",
-      title: "测量目标 1 · AI 使用与评估能力",
-      instruction: "请选择你对每项陈述的同意程度。",
-      anchors: ["非常不同意", "不同意", "一般", "同意", "非常同意"],
-      source: "改编自 Artificial Intelligence Literacy Scale 的“使用”和“评估”维度；本研究采用任务化短版，不使用原量表总分。",
-      items: [
-        "我能使用 AI 帮助整理材料并澄清研究问题。",
-        "我能判断 AI 的回答是否得到所给材料的支持。",
-        "我能识别 AI 回答中的错误、遗漏或缺乏证据的推断。",
+      id:"ai_use_experience",
+      title:"测量目标 1 · AI 使用经历",
+      instruction:"请根据过去 3 个月的实际使用情况作答。本部分记录使用经历，不计算“AI 素养总分”。",
+      source:"研究者编制的事实型协变量题项；时间窗口统一为过去 3 个月，不属于标准化心理量表。",
+      items:[
+        {id:"ai_use_frequency",text:"过去 3 个月，你通常多频繁使用生成式 AI 工具（如 DeepSeek、ChatGPT、文心一言或通义千问）？",anchors:["从未","少于每周 1 次","每周 1–2 次","每周 3–4 次","每周 5 天及以上"]},
+        {id:"ai_use_duration",text:"截至目前，你持续使用生成式 AI 工具大约有多长时间？",anchors:["从未使用","不足 3 个月","3–6 个月","7–12 个月","超过 1 年"]},
+        {id:"ai_task_breadth",text:"过去 3 个月，你使用过 AI 完成多少类学习或科研任务？任务类别包括：检索阅读、整理总结、写作修改、数据分析或编程。",anchors:["0 类","1 类","2 类","3 类","4 类及以上"]},
+        {id:"ai_research_frequency",text:"过去 3 个月，你在课程论文、科研项目或研究写作中使用 AI 的频率如何？",anchors:["从未","很少","有时","经常","几乎每次任务"]},
       ],
     },
     {
-      id: "research_self_efficacy",
-      title: "测量目标 2 · 研究任务自我效能",
-      instruction: "请选择你目前完成每项任务的信心水平。",
-      anchors: ["完全没信心", "较没信心", "一般", "较有信心", "非常有信心"],
-      source: "依据 Research Self-Efficacy Scale / Self-Efficacy in Research Measure 的问题概念化与研究设计维度进行任务化改编；不等同于原量表计分。",
-      items: [
-        "我有信心从相互冲突的材料中界定一个可研究的问题。",
-        "我有信心比较至少两个不同的问题框架。",
-        "我有信心提出可验证的假设，并指出仍不确定之处。",
-        "我有信心在现实约束下设计可行的验证方案。",
+      id:"ails_ccs",
+      title:"测量目标 2 · AI 素养",
+      instruction:"以下 15 题采用 5 点同意度作答，分别测量 AI 认知、使用、评价与伦理意识。",
+      source:"来源：Ma, S., & Chen, Z. (2024), Artificial Intelligence Literacy Scale for Chinese College Students（AILS-CCS）, IEEE Access, 12, 146419–146429。保留原量表 15 题、四维度和 5 点结构；当前中文措辞为本研究工作译本，正式实验前仍需与作者版本核对并进行预测试。",
+      sourceUrl:"https://doi.org/10.1109/ACCESS.2024.3468378",
+      sourceLabel:"DOI: 10.1109/ACCESS.2024.3468378",
+      items:[
+        {id:"ails_awareness_1",subscale:"认知",text:"我理解人工智能的定义。",anchors:agreementZh},
+        {id:"ails_awareness_2",subscale:"认知",text:"我熟悉人工智能的一些基本原理（如线性模型、决策树和机器学习）。",anchors:agreementZh},
+        {id:"ails_awareness_3",subscale:"认知",text:"我理解人工智能如何感知外部世界（如视觉、听觉）以执行不同任务。",anchors:agreementZh},
+        {id:"ails_awareness_4",subscale:"认知",text:"我能比较与人工智能有关的不同概念（如深度学习与机器学习的区别）。",anchors:agreementZh},
+        {id:"ails_usage_1",subscale:"使用",text:"我能够熟练使用人工智能应用或产品。",anchors:agreementZh},
+        {id:"ails_usage_2",subscale:"使用",text:"我能使用人工智能应用或产品帮助解决日常生活中的问题。",anchors:agreementZh},
+        {id:"ails_usage_3",subscale:"使用",text:"我能使用人工智能应用或产品辅助学习。",anchors:agreementZh},
+        {id:"ails_evaluation_1",subscale:"评价",text:"我能从人工智能提供的多种方案中选择适当的方案。",anchors:agreementZh},
+        {id:"ails_evaluation_2",subscale:"评价",text:"我能评价不同人工智能应用或产品的局限性。",anchors:agreementZh},
+        {id:"ails_evaluation_3",subscale:"评价",text:"我能识别人工智能生成内容中的偏见。",anchors:agreementZh},
+        {id:"ails_evaluation_4",subscale:"评价",text:"我会对人工智能生成的内容保持怀疑或谨慎。",anchors:agreementZh},
+        {id:"ails_ethics_1",subscale:"伦理",text:"使用人工智能应用或产品时，我始终遵守伦理原则。",anchors:agreementZh},
+        {id:"ails_ethics_2",subscale:"伦理",text:"使用人工智能应用或产品时，我始终关注隐私与信息安全问题。",anchors:agreementZh},
+        {id:"ails_ethics_3",subscale:"伦理",text:"我能批判性反思人工智能对个人与社会的影响。",anchors:agreementZh},
+        {id:"ails_ethics_4",subscale:"伦理",text:"我始终警惕人工智能技术被滥用。",anchors:agreementZh},
       ],
     },
     {
-      id: "topic_familiarity",
-      title: "测量目标 3 · 议题先验熟悉度",
-      instruction: "请选择最符合你当前情况的程度。",
-      anchors: ["完全不符合", "较不符合", "一般", "较符合", "非常符合"],
-      source: "研究者编制的协变量题项，用于控制垃圾分类议题的先验熟悉度；不是标准化心理量表。",
-      items: [
-        "我熟悉城市生活垃圾分类治理这一议题。",
-        "我曾阅读或讨论过垃圾分类治理的相关案例。",
-        "即使不看额外资料，我也能解释垃圾分类治理的基本流程。",
+      id:"research_baseline",
+      title:"测量目标 3 · 研究任务基线",
+      instruction:"本目标分别记录研究任务自我效能和垃圾分类议题的先验熟悉度；两个分量不合并计分。",
+      source:"“研究任务自我效能”题项依据 RSES 的问题概念化维度进行任务化改编（Bieschke, Bishop, & Garcia, 1996）；“议题熟悉度”为研究者编制的协变量题项。二者均不按原量表总分计分。",
+      sourceUrl:"https://doi.org/10.1177/106907279600400104",
+      sourceLabel:"RSES 参考文献",
+      items:[
+        {id:"research_self_efficacy_1",subscale:"研究任务自我效能",text:"我有信心从相互冲突的材料中界定一个可研究的问题。",anchors:confidenceZh},
+        {id:"research_self_efficacy_2",subscale:"研究任务自我效能",text:"我有信心比较至少两个不同的问题框架。",anchors:confidenceZh},
+        {id:"research_self_efficacy_3",subscale:"研究任务自我效能",text:"我有信心提出可验证的假设，并指出仍不确定之处。",anchors:confidenceZh},
+        {id:"research_self_efficacy_4",subscale:"研究任务自我效能",text:"我有信心在现实约束下设计可行的验证方案。",anchors:confidenceZh},
+        {id:"topic_familiarity_1",subscale:"议题先验熟悉度",text:"我熟悉城市生活垃圾分类治理这一议题。",anchors:familiarityZh},
+        {id:"topic_familiarity_2",subscale:"议题先验熟悉度",text:"我曾阅读或讨论过垃圾分类治理的相关案例。",anchors:familiarityZh},
+        {id:"topic_familiarity_3",subscale:"议题先验熟悉度",text:"即使不看额外资料，我也能解释垃圾分类治理的基本流程。",anchors:familiarityZh},
       ],
     },
   ] : [
     {
-      id: "ai_literacy",
-      title: "Goal 1 · AI use and evaluation",
-      instruction: "Select how strongly you agree with each statement.",
-      anchors: ["Strongly disagree", "Disagree", "Neutral", "Agree", "Strongly agree"],
-      source: "Task-specific adaptation of the Use and Evaluation dimensions of the Artificial Intelligence Literacy Scale; the original total score is not used.",
-      items: [
-        "I can use AI to organize evidence and clarify a research problem.",
-        "I can judge whether an AI response is supported by the provided materials.",
-        "I can identify errors, omissions, or unsupported inferences in an AI response.",
+      id:"ai_use_experience",
+      title:"Goal 1 · Prior AI-use experience",
+      instruction:"Answer based on your actual use during the past three months. These items describe experience and do not form an AI-literacy score.",
+      source:"Researcher-authored factual covariates using a consistent three-month reference period; this is not a standardized psychological scale.",
+      items:[
+        {id:"ai_use_frequency",text:"During the past three months, how often did you typically use generative-AI tools such as DeepSeek, ChatGPT, ERNIE Bot, or Qwen?",anchors:["Never","Less than weekly","1–2 times a week","3–4 times a week","5+ days a week"]},
+        {id:"ai_use_duration",text:"For approximately how long have you regularly used generative-AI tools?",anchors:["Never used","Under 3 months","3–6 months","7–12 months","Over 1 year"]},
+        {id:"ai_task_breadth",text:"During the past three months, for how many types of learning or research tasks did you use AI? Categories include searching/reading, organizing/summarizing, writing/revising, and data analysis/coding.",anchors:["0 types","1 type","2 types","3 types","4+ types"]},
+        {id:"ai_research_frequency",text:"During the past three months, how often did you use AI for course papers, research projects, or research writing?",anchors:["Never","Rarely","Sometimes","Often","Almost every task"]},
       ],
     },
     {
-      id: "research_self_efficacy",
-      title: "Goal 2 · Research-task self-efficacy",
-      instruction: "Select your current confidence in completing each task.",
-      anchors: ["No confidence", "Low confidence", "Moderate", "High confidence", "Complete confidence"],
-      source: "Task-specific adaptation informed by the conceptualization and research-design dimensions of RSES/SERM; it is not scored as the original scales.",
-      items: [
-        "I can define a researchable problem from conflicting materials.",
-        "I can compare at least two different problem framings.",
-        "I can form testable hypotheses and state what remains uncertain.",
-        "I can design a feasible test under real-world constraints.",
+      id:"ails_ccs",
+      title:"Goal 2 · AI literacy",
+      instruction:"These 15 items use five-point agreement responses across awareness, usage, evaluation, and ethics.",
+      source:"Source: Ma, S., & Chen, Z. (2024), Artificial Intelligence Literacy Scale for Chinese College Students (AILS-CCS), IEEE Access, 12, 146419–146429. This page retains the 15-item, four-dimension, five-point structure.",
+      sourceUrl:"https://doi.org/10.1109/ACCESS.2024.3468378",
+      sourceLabel:"DOI: 10.1109/ACCESS.2024.3468378",
+      items:[
+        {id:"ails_awareness_1",subscale:"Awareness",text:"I understand the definition of artificial intelligence.",anchors:agreementEn},
+        {id:"ails_awareness_2",subscale:"Awareness",text:"I am familiar with underlying principles of artificial intelligence, such as linear models, decision trees, and machine learning.",anchors:agreementEn},
+        {id:"ails_awareness_3",subscale:"Awareness",text:"I understand how artificial intelligence perceives the world, such as through seeing and hearing, to perform tasks.",anchors:agreementEn},
+        {id:"ails_awareness_4",subscale:"Awareness",text:"I can compare concepts related to artificial intelligence, such as deep learning and machine learning.",anchors:agreementEn},
+        {id:"ails_usage_1",subscale:"Usage",text:"I am proficient in using artificial-intelligence applications or products.",anchors:agreementEn},
+        {id:"ails_usage_2",subscale:"Usage",text:"I can use artificial-intelligence applications or products to help solve problems in daily life.",anchors:agreementEn},
+        {id:"ails_usage_3",subscale:"Usage",text:"I can use artificial-intelligence applications or products to support my learning.",anchors:agreementEn},
+        {id:"ails_evaluation_1",subscale:"Evaluation",text:"I can select an appropriate solution from options provided by artificial intelligence.",anchors:agreementEn},
+        {id:"ails_evaluation_2",subscale:"Evaluation",text:"I can evaluate the limitations of different artificial-intelligence applications or products.",anchors:agreementEn},
+        {id:"ails_evaluation_3",subscale:"Evaluation",text:"I can identify biases in content generated by artificial intelligence.",anchors:agreementEn},
+        {id:"ails_evaluation_4",subscale:"Evaluation",text:"I remain skeptical or cautious about content generated by artificial intelligence.",anchors:agreementEn},
+        {id:"ails_ethics_1",subscale:"Ethics",text:"I always adhere to ethical principles when using artificial-intelligence applications or products.",anchors:agreementEn},
+        {id:"ails_ethics_2",subscale:"Ethics",text:"I am always alert to privacy and information-security issues when using artificial-intelligence applications or products.",anchors:agreementEn},
+        {id:"ails_ethics_3",subscale:"Ethics",text:"I can critically reflect on the impact of artificial intelligence on individuals and society.",anchors:agreementEn},
+        {id:"ails_ethics_4",subscale:"Ethics",text:"I am always alert to the misuse of artificial-intelligence technology.",anchors:agreementEn},
       ],
     },
     {
-      id: "topic_familiarity",
-      title: "Goal 3 · Prior topic familiarity",
-      instruction: "Select the response that best describes you.",
-      anchors: ["Not at all", "Slightly", "Moderately", "Very", "Extremely"],
-      source: "Researcher-authored covariate items for prior familiarity with waste-sorting governance; this is not a standardized psychological scale.",
-      items: [
-        "I am familiar with urban household waste-sorting governance.",
-        "I have read or discussed related waste-sorting cases.",
-        "Without extra materials, I can explain the basic waste-sorting governance process.",
+      id:"research_baseline",
+      title:"Goal 3 · Research-task baseline",
+      instruction:"This goal records research-task self-efficacy and prior topic familiarity as separate covariates; their scores are not combined.",
+      source:"Research-task self-efficacy items are task-specific adaptations informed by the RSES conceptualization dimension (Bieschke, Bishop, & Garcia, 1996). Topic-familiarity items are researcher-authored covariates; neither is scored as an original standardized scale.",
+      sourceUrl:"https://doi.org/10.1177/106907279600400104",
+      sourceLabel:"RSES reference",
+      items:[
+        {id:"research_self_efficacy_1",subscale:"Research-task self-efficacy",text:"I am confident that I can define a researchable problem from conflicting materials.",anchors:confidenceEn},
+        {id:"research_self_efficacy_2",subscale:"Research-task self-efficacy",text:"I am confident that I can compare at least two different problem framings.",anchors:confidenceEn},
+        {id:"research_self_efficacy_3",subscale:"Research-task self-efficacy",text:"I am confident that I can form testable hypotheses and identify what remains uncertain.",anchors:confidenceEn},
+        {id:"research_self_efficacy_4",subscale:"Research-task self-efficacy",text:"I am confident that I can design a feasible test under real-world constraints.",anchors:confidenceEn},
+        {id:"topic_familiarity_1",subscale:"Prior topic familiarity",text:"I am familiar with urban household waste-sorting governance.",anchors:familiarityEn},
+        {id:"topic_familiarity_2",subscale:"Prior topic familiarity",text:"I have read or discussed cases related to waste-sorting governance.",anchors:familiarityEn},
+        {id:"topic_familiarity_3",subscale:"Prior topic familiarity",text:"Without extra materials, I can explain the basic process of waste-sorting governance.",anchors:familiarityEn},
       ],
     },
   ];
-  const flatItems=groups.flatMap(group=>group.items.map((item,index)=>({id:`${group.id}_${index+1}`,groupId:group.id,item})));
+  const flatItems=groups.flatMap(group=>group.items.map(item=>({id:item.id,groupId:group.id,item})));
   const [responses,setResponses]=useState<Record<string,number>>({});
   const complete=flatItems.every(item=>responses[item.id]);
   return <CenteredShell step="Task setup · 2 / 2" title={t.pretitle}>
-    <p className="mb-7 text-sm leading-6 text-muted-foreground">{locale==="zh-CN"?"本页包含 3 个测量目标；每个目标由多个评价点组成。所有题目均使用可点击的 5 点作答。":"This page contains three measurement goals, each represented by multiple items. All items use clickable five-point responses."}</p>
+    <p className="mb-7 text-sm leading-6 text-muted-foreground">{locale==="zh-CN"?"本页包含 3 个测量目标，共 26 个评价点。请根据真实情况作答；所有题目均使用可点击的 5 点选项。":"This page contains three measurement goals and 26 items. Answer based on your actual situation using the clickable five-point options."}</p>
     <div className="space-y-8">
       {groups.map(group=><section key={group.id} className="rounded-xl border bg-[#fcfcfd] p-5">
         <h2 className="font-semibold">{group.title}</h2>
         <p className="mt-1 text-xs text-muted-foreground">{group.instruction}</p>
         <div className="mt-5 space-y-6">
           {group.items.map((item,itemIndex)=>{
-            const id=`${group.id}_${itemIndex+1}`;
-            return <fieldset key={id}>
-              <legend className="text-sm font-medium leading-6">{itemIndex+1}. {item}</legend>
+            const showSubscale=Boolean(item.subscale)&&(itemIndex===0||group.items[itemIndex-1]?.subscale!==item.subscale);
+            return <fieldset key={item.id} className={showSubscale&&itemIndex>0?"border-t pt-5":""}>
+              {showSubscale&&<Badge variant="secondary" className="mb-3 rounded-full text-[10px]">{item.subscale}</Badge>}
+              <legend className="text-sm font-medium leading-6">{itemIndex+1}. {item.text}</legend>
               <div className="mt-3 grid grid-cols-5 gap-2">
-                {group.anchors.map((anchor,index)=>{
+                {item.anchors.map((anchor,index)=>{
                   const value=index+1;
-                  const selected=responses[id]===value;
-                  return <button type="button" key={anchor} aria-pressed={selected} aria-label={`${value} - ${anchor}`} onClick={()=>{setResponses(current=>({...current,[id]:value}));eventLog("pre_survey_item_answered",{taskId,itemId:id,value},{stage:"pre_survey",targetType:"survey_item",targetId:id})}} className={`min-h-16 rounded-lg border px-2 py-2 text-center transition ${selected?"border-primary bg-primary text-white shadow-sm":"bg-white hover:border-primary/50 hover:bg-secondary/40"}`}><span className="block text-base font-semibold">{value}</span><span className={`mt-1 block text-[10px] leading-4 ${selected?"text-white/85":"text-muted-foreground"}`}>{anchor}</span></button>
+                  const selected=responses[item.id]===value;
+                  return <button type="button" key={anchor} aria-pressed={selected} aria-label={`${value} - ${anchor}`} onClick={()=>{setResponses(current=>({...current,[item.id]:value}));eventLog("pre_survey_item_answered",{taskId,itemId:item.id,groupId:group.id,subscale:item.subscale,value},{stage:"pre_survey",targetType:"survey_item",targetId:item.id})}} className={`min-h-16 rounded-lg border px-2 py-2 text-center transition ${selected?"border-primary bg-primary text-white shadow-sm":"bg-white hover:border-primary/50 hover:bg-secondary/40"}`}><span className="block text-base font-semibold">{value}</span><span className={`mt-1 block text-[10px] leading-4 ${selected?"text-white/85":"text-muted-foreground"}`}>{anchor}</span></button>
                 })}
               </div>
             </fieldset>;
           })}
         </div>
-        <p className="mt-5 border-t pt-3 text-[10px] leading-5 text-muted-foreground">{group.source}</p>
+        <p className="mt-5 border-t pt-3 text-[10px] leading-5 text-muted-foreground">{group.source}{group.sourceUrl&&<>{" "}<a href={group.sourceUrl} target="_blank" rel="noreferrer" className="font-medium text-primary underline underline-offset-2">{group.sourceLabel}</a></>}</p>
       </section>)}
     </div>
-    <TimedButton seconds={8} ready={complete} locale={locale} label={t.next} blockedLabel={locale==="zh-CN"?"请完成全部评价点":"Answer every item"} onClick={()=>{eventLog("pre_survey_completed",{taskId,responses,constructs:groups.map(group=>group.id)},{stage:"pre_survey"});setScreen("work")}} className="mt-10 h-12 w-full" />
+    <TimedButton seconds={8} ready={complete} locale={locale} label={t.next} blockedLabel={locale==="zh-CN"?"请完成全部评价点":"Answer every item"} onClick={()=>{eventLog("pre_survey_completed",{taskId,responses,constructs:groups.map(group=>group.id),aiLiteracyScale:"AILS-CCS_15-item_5-point"},{stage:"pre_survey"});setScreen("work")}} className="mt-10 h-12 w-full" />
   </CenteredShell>;
 }
 
