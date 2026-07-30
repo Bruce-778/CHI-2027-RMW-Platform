@@ -7,23 +7,28 @@ import {
   Check,
   CheckCircle,
   Clock,
-  LinkSimple,
-  NotePencil,
+  Graph,
   PauseCircle,
-  PushPin,
-  Sparkle,
+  Question,
   Target,
   WarningCircle,
-  XCircle,
 } from "@phosphor-icons/react";
+import {
+  Background,
+  Controls,
+  Handle,
+  Position,
+  ReactFlow,
+  type Edge,
+  type Node,
+} from "@xyflow/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Textarea } from "@/components/ui/textarea";
-import { createInitialCards } from "@/lib/demo-data";
+import { createInitialCards, relations as demoRelations } from "@/lib/demo-data";
 import { eventLog } from "@/lib/event-log";
 import type { ResearchTaskId } from "@/lib/research-task";
-import type { EpistemicStatus, Locale } from "@/lib/rmw-types";
+import type { EpistemicStatus, Locale, RelationType } from "@/lib/rmw-types";
 
 type CaptureKind = "goal" | "hypothesis" | "evidence" | "constraint" | "path" | "next_action";
 type GoalLevel = "main" | "subgoal" | "suspended";
@@ -39,119 +44,114 @@ interface CaptureCard {
   confidence: number;
   source: Record<Locale, string>;
   why: Record<Locale, string>;
-  reviewed: boolean;
 }
 
-type ExtractedCard = Omit<CaptureCard, "content" | "detail" | "source" | "why" | "reviewed"> & {
+type ExtractedCard = Omit<CaptureCard, "content" | "detail" | "source" | "why"> & {
   content: string;
   detail: string;
   source: string;
   why: string;
 };
 
+interface CaptureRelation {
+  id: string;
+  sourceCardId: string;
+  targetCardId: string;
+  relationType: RelationType;
+  confidence?: number;
+}
+
 function createCaptureCards(taskId: ResearchTaskId): CaptureCard[] {
-  return createInitialCards(taskId).map((card) => {
-    const sourceLabels = card.sourceRefs.map((source) => source.label);
-    return {
-      id: card.id,
-      kind: card.cardType,
-      goalLevel: card.goalLevel,
-      content: card.content,
-      detail: card.detail,
-      status: card.status,
-      priority: card.priority,
-      confidence: card.confidence ?? 50,
-      source: {
-        "zh-CN": sourceLabels.length ? sourceLabels.join("、") : "系统候选；尚未定位到明确来源",
-        en: sourceLabels.length ? sourceLabels.join(", ") : "System candidate; no specific source located",
-      },
-      why: {
-        "zh-CN": card.cardType === "next_action"
-          ? "用于保存中断前准备执行的最小下一步；必须由你校准。"
-          : "从当前任务结构生成的低风险候选；只保留与你实际推理一致的内容。",
-        en: card.cardType === "next_action"
-          ? "Preserves the minimum action intended before interruption; participant calibration is required."
-          : "A low-risk candidate from the task structure; retain it only if it matches your actual reasoning.",
-      },
-      reviewed: false,
-    };
-  });
+  return createInitialCards(taskId).map((card) => ({
+    id: card.id,
+    kind: card.cardType,
+    goalLevel: card.goalLevel,
+    content: card.content,
+    detail: card.detail,
+    status: card.status,
+    priority: card.priority,
+    confidence: card.confidence ?? 50,
+    source: {
+      "zh-CN": card.sourceRefs.map((source) => source.label).join("、") || "尚未识别明确来源",
+      en: card.sourceRefs.map((source) => source.label).join(", ") || "No specific source identified",
+    },
+    why: {
+      "zh-CN": "根据当前 memo、对话和材料引用生成的候选推理状态。",
+      en: "Candidate reasoning state extracted from the memo, chat, and material references.",
+    },
+  }));
 }
 
 const labels = {
   "zh-CN": {
-    title: "保存当前推理位置",
-    subtitle: "系统根据当前工作区生成候选状态。没有明确来源或置信度较低的卡片必须由你编辑、标记存疑或删除。",
+    title: "保存窗口",
+    subtitle: "DeepSeek 正在根据你的 memo、对话与材料引用归纳候选 Problem State，并生成知识网络。",
     task: "主任务",
     save: "保存窗口",
     break: "中断任务",
     resume: "恢复",
-    prompt: "回来后先继续哪一步？",
-    suggested: "系统建议的最小下一步",
     main: "主目标",
     active: "活跃子目标",
     suspended: "挂起目标",
-    resolved: "已排除路径",
+    rejected: "已排除路径",
     candidates: "候选 Problem State",
-    evidence: "来源",
-    why: "为什么被保存",
-    confidence: "提取置信度",
-    accept: "接受",
-    edit: "编辑",
-    pin: "置顶",
-    uncertain: "存疑",
-    expire: "过期",
+    network: "知识网络",
+    source: "来源",
+    confidence: "置信度",
     saveAndBreak: "保存并进入中断任务",
-    reviewed: "已校准",
-    cards: "张卡片",
-    notMind: "RMW 只提出候选状态，不声称读取了你的真实想法。",
+    waiting: "保存按钮将在 1 分钟后开放",
+    early: "请完成 1 分钟的查看时间，倒计时结束后才可进入中断任务。",
+    guideTitle: "保存窗口说明",
+    guideDescription: "这里没有接受、编辑或置顶操作。你只需查看 DeepSeek 归纳出的状态与关系，系统会完整记录呈现版本。",
     interruption: "中断任务",
-    nback: "2-back 工作记忆任务",
-    nbackHint: "判断当前字母是否与前两个字母相同。",
+    letterGame: "字母 2-back 游戏",
+    letterHint: "判断当前字母是否与前两个字母相同。",
+    colorGame: "颜色识别游戏",
+    colorHint: "请选择文字实际显示的颜色，不要选择文字含义。",
     same: "相同",
     different: "不同",
-    trial: "试次",
-    accuracy: "当前正确率",
-    finish: "结束中断并进入无辅助回忆",
+    trial: "题目",
+    retry: "未达到满分，请重新开始",
+    nextGame: "进入颜色游戏",
+    finish: "进入无辅助回忆",
+    fullScore: "两个游戏都必须满分才能继续",
   },
   en: {
-    title: "Save your reasoning position",
-    subtitle: "The system generated candidate state from the current workspace. Edit, mark uncertain, or remove cards with weak confidence or no specific source.",
+    title: "Save window",
+    subtitle: "DeepSeek is extracting candidate problem state from the memo, chat, and cited materials, then building a knowledge network.",
     task: "Primary task",
     save: "Save window",
     break: "Interruption",
     resume: "Resume",
-    prompt: "What is the first thing you should continue?",
-    suggested: "Suggested minimum next action",
     main: "Main goal",
     active: "Active subgoals",
     suspended: "Suspended goals",
-    resolved: "Rejected path",
+    rejected: "Rejected path",
     candidates: "Candidate problem state",
-    evidence: "Source",
-    why: "Why it was captured",
-    confidence: "Extraction confidence",
-    accept: "Accept",
-    edit: "Edit",
-    pin: "Pin",
-    uncertain: "Uncertain",
-    expire: "Expire",
+    network: "Knowledge network",
+    source: "Source",
+    confidence: "Confidence",
     saveAndBreak: "Save and begin interruption",
-    reviewed: "calibrated",
-    cards: "cards",
-    notMind: "RMW proposes candidate state; it does not claim access to your mind.",
-    interruption: "Interruption task",
-    nback: "2-back working-memory task",
-    nbackHint: "Judge whether the current letter matches the letter two positions back.",
+    waiting: "Save opens after one minute",
+    early: "Please use the full one-minute review period. The interruption opens when the countdown ends.",
+    guideTitle: "Save-window guide",
+    guideDescription: "There are no accept, edit, or pin controls here. Review the DeepSeek-generated state and network; the shown version is logged.",
+    interruption: "Interruption",
+    letterGame: "Letter 2-back game",
+    letterHint: "Decide whether the current letter matches the letter two positions back.",
+    colorGame: "Color identification game",
+    colorHint: "Choose the color the word is displayed in, not the meaning of the word.",
     same: "Same",
     different: "Different",
-    trial: "Trial",
-    accuracy: "Accuracy",
-    finish: "Finish interruption and begin unsupported recall",
+    trial: "Item",
+    retry: "Full score required — restart",
+    nextGame: "Continue to color game",
+    finish: "Begin unsupported recall",
+    fullScore: "Both games require a perfect score",
   },
 };
 
-function Timeline({ locale, active }: { locale: Locale; active: "save" | "break" | "resume" }) {
+export function ExperimentTimeline({ locale, active, compact=false }: { locale: Locale; active: "task" | "save" | "break" | "resume"; compact?: boolean }) {
   const t = labels[locale];
   const steps = [
     { id: "task", label: t.task },
@@ -160,36 +160,148 @@ function Timeline({ locale, active }: { locale: Locale; active: "save" | "break"
     { id: "resume", label: t.resume },
   ];
   const activeIndex = steps.findIndex((step) => step.id === active);
-  return (
-    <div className="grid grid-cols-4 rounded-xl border bg-white p-2 shadow-sm">
-      {steps.map((step, index) => (
-        <div key={step.id} className="relative flex items-center gap-3 px-4 py-2">
-          {index > 0 && <div className="absolute -left-2 top-1/2 h-px w-4 bg-border" />}
-          <span className={`grid size-7 place-items-center rounded-full text-xs font-semibold ${index <= activeIndex ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}>
-            {index < activeIndex ? <Check size={14} /> : index + 1}
-          </span>
-          <span className={`text-xs font-medium ${step.id === active ? "text-primary" : "text-muted-foreground"}`}>{step.label}</span>
-        </div>
-      ))}
-    </div>
-  );
+  return <div className={`grid grid-cols-4 bg-white ${compact?"h-[52px] border-b px-5 py-1.5":"rounded-xl border p-2 shadow-sm"}`}>
+    {steps.map((step, index) => <div key={step.id} className="relative flex items-center gap-3 px-4 py-2">
+      {index > 0 && <div className="absolute -left-2 top-1/2 h-px w-4 bg-border" />}
+      <span className={`grid size-7 place-items-center rounded-full text-xs font-semibold ${index <= activeIndex ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}>
+        {index < activeIndex ? <Check size={14} /> : index + 1}
+      </span>
+      <span className={`text-xs font-medium ${step.id === active ? "text-primary" : "text-muted-foreground"}`}>{step.label}</span>
+    </div>)}
+  </div>;
 }
 
-function GoalTile({ card, locale, selected, onClick }: { card: CaptureCard; locale: Locale; selected: boolean; onClick: () => void }) {
-  const statusStyle = card.status === "uncertain"
+function useCheckpointCountdown(fastMode: boolean) {
+  const duration = fastMode ? 0 : 60;
+  const [remaining, setRemaining] = useState(duration);
+  useEffect(() => {
+    const storageKey = "rmw-timer-checkpoint";
+    const stored = Number(sessionStorage.getItem(storageKey));
+    const endAt = Number.isFinite(stored) && stored > Date.now() ? stored : Date.now() + duration * 1000;
+    sessionStorage.setItem(storageKey, String(endAt));
+    const update = () => setRemaining(Math.max(0, Math.ceil((endAt - Date.now()) / 1000)));
+    update();
+    const timer = window.setInterval(update, 250);
+    return () => window.clearInterval(timer);
+  }, [duration]);
+  return remaining;
+}
+
+function formatClock(totalSeconds: number) {
+  return `00:${String(totalSeconds).padStart(2, "0")}`;
+}
+
+function StateTile({ card, locale }: { card: CaptureCard; locale: Locale }) {
+  const style = card.status === "uncertain"
     ? "border-amber-200 bg-amber-50/70"
     : card.status === "expired"
       ? "border-slate-200 bg-slate-50 text-slate-500"
-      : "border-emerald-200 bg-emerald-50/55";
-  return (
-    <button onClick={onClick} className={`w-full rounded-xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${statusStyle} ${selected ? "ring-2 ring-primary/25" : ""}`}>
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] font-semibold uppercase tracking-wider">{card.status}</span>
-        {card.priority === "pinned" && <PushPin size={14} weight="fill" className="text-primary" />}
-      </div>
-      <p className="mt-2 text-sm font-semibold leading-5 text-foreground">{card.content[locale]}</p>
-    </button>
-  );
+      : "border-emerald-200 bg-emerald-50/60";
+  return <article className={`rounded-xl border p-3 ${style}`}>
+    <div className="flex items-center justify-between">
+      <span className="text-[9px] font-semibold uppercase tracking-wider">{card.goalLevel || card.kind}</span>
+      <span className="text-[9px] text-muted-foreground">{card.confidence}%</span>
+    </div>
+    <p className="mt-2 text-xs font-semibold leading-5 text-foreground">{card.content[locale]}</p>
+    <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-muted-foreground">{card.source[locale]}</p>
+  </article>;
+}
+
+type FlowData = { label: string; status: EpistemicStatus };
+function FlowNode({ data }: { data: FlowData }) {
+  const tone = data.status === "uncertain"
+    ? "border-amber-400 bg-amber-50"
+    : data.status === "expired"
+      ? "border-slate-300 bg-slate-50"
+      : "border-emerald-400 bg-emerald-50";
+  return <div className={`w-[146px] rounded-xl border-2 px-3 py-2 text-center text-[10px] font-medium leading-4 shadow-sm ${tone}`}>
+    <Handle type="target" position={Position.Left} />
+    {data.label}
+    <Handle type="source" position={Position.Right} />
+  </div>;
+}
+const nodeTypes = { reasoning: FlowNode };
+
+function CheckpointNetwork({ cards, relations, locale }: { cards: CaptureCard[]; relations: CaptureRelation[]; locale: Locale }) {
+  const positions = useMemo(() => {
+    const result: Record<string, { x: number; y: number }> = {};
+    const groups = [
+      cards.filter((card) => card.goalLevel === "main"),
+      cards.filter((card) => card.goalLevel === "subgoal"),
+      cards.filter((card) => card.goalLevel === "suspended"),
+      cards.filter((card) => !card.goalLevel),
+    ];
+    groups.forEach((group, row) => group.forEach((card, column) => {
+      result[card.id] = { x: 60 + column * 190, y: 20 + row * 105 };
+    }));
+    return result;
+  }, [cards]);
+  const nodes = useMemo<Node<FlowData>[]>(() => cards.map((card) => ({
+    id: card.id,
+    type: "reasoning",
+    position: positions[card.id] || { x: 0, y: 0 },
+    data: { label: card.content[locale], status: card.status },
+  })), [cards, locale, positions]);
+  const edges = useMemo<Edge[]>(() => relations.map((relation) => ({
+    id: relation.id,
+    source: relation.sourceCardId,
+    target: relation.targetCardId,
+    label: relation.relationType,
+    animated: relation.relationType === "leads_to",
+    style: { stroke: relation.relationType === "challenges" ? "#c58a2c" : "#8992a6" },
+    labelStyle: { fontSize: 9, fill: "#687083" },
+  })), [relations]);
+  return <div className="h-[360px] overflow-hidden rounded-2xl border bg-white">
+    <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView minZoom={0.45} maxZoom={1.5}>
+      <Background gap={22} size={1} color="#e7e9ef" />
+      <Controls position="bottom-right" showInteractive={false} />
+    </ReactFlow>
+  </div>;
+}
+
+function CheckpointGuide({ locale, open, onOpenChange }: { locale: Locale; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const chinese=locale==="zh-CN";
+  const items=[
+    ["checkpoint-goals",Target,chinese?"目标结构":"Goal structure",chinese?"这里汇总主目标、活跃子目标、挂起目标和已排除路径。":"This area summarizes the main, active, suspended, and rejected paths."],
+    ["checkpoint-state",Brain,chinese?"候选 Problem State":"Candidate problem state",chinese?"这是 DeepSeek 根据 memo、对话和材料引用生成的候选状态，不代表系统读取了你的真实想法。":"DeepSeek derives this candidate state from the memo, chat, and citations."],
+    ["checkpoint-network",Graph,chinese?"知识网络":"Knowledge network",chinese?"这里展示目标、假设、约束、排除路径和下一步之间的关系。":"This shows relations among goals, hypotheses, constraints, rejected paths, and next actions."],
+  ];
+  const [step,setStep]=useState(0);
+  const [rect,setRect]=useState<DOMRect|null>(null);
+  const targetId=String(items[step][0]);
+  useEffect(()=>{
+    if(!open)return;
+    const update=()=>{
+      const target=document.querySelector(`[data-tour="${targetId}"]`);
+      if(target)setRect(target.getBoundingClientRect());
+    };
+    const frame=requestAnimationFrame(update);
+    window.addEventListener("resize",update);
+    window.addEventListener("scroll",update,true);
+    return()=>{cancelAnimationFrame(frame);window.removeEventListener("resize",update);window.removeEventListener("scroll",update,true);};
+  },[open,targetId]);
+  if(!open||!rect)return null;
+  const [,I,title,description]=items[step];
+  const Icon=I as typeof Brain;
+  const gap=8;
+  const top=Math.max(0,rect.top-gap);
+  const left=Math.max(0,rect.left-gap);
+  const right=Math.min(window.innerWidth,rect.right+gap);
+  const bottom=Math.min(window.innerHeight,rect.bottom+gap);
+  const calloutStyle={top:`${Math.max(16,Math.min(window.innerHeight-250,rect.top+12))}px`,left:right+340<window.innerWidth?`${right+18}px`:`${Math.max(16,left-338)}px`};
+  const finish=()=>{setStep(0);onOpenChange(false);};
+  return <div className="fixed inset-0 z-[80]" role="dialog" aria-modal="true" aria-label={chinese?"保存窗口分步导览":"Save-window tour"}>
+    <div className="absolute bg-slate-950/55 backdrop-blur-[2px]" style={{inset:"0 0 auto 0",height:top}}/>
+    <div className="absolute bg-slate-950/55 backdrop-blur-[2px]" style={{top,left:0,width:left,height:bottom-top}}/>
+    <div className="absolute bg-slate-950/55 backdrop-blur-[2px]" style={{top,left:right,right:0,height:bottom-top}}/>
+    <div className="absolute bg-slate-950/55 backdrop-blur-[2px]" style={{top:bottom,left:0,right:0,bottom:0}}/>
+    <div className="pointer-events-none absolute rounded-2xl ring-4 ring-white shadow-[0_0_0_2px_var(--primary),0_18px_70px_rgba(13,22,48,.32)]" style={{top,left,width:right-left,height:bottom-top}}/>
+    <aside className="absolute w-80 rounded-2xl border bg-white p-5 shadow-[0_24px_80px_rgba(10,18,44,.28)]" style={calloutStyle}>
+      <div className="flex items-center justify-between"><span className="grid size-10 place-items-center rounded-xl bg-secondary text-primary"><Icon size={21}/></span><span className="text-xs font-semibold text-muted-foreground">{step+1} / {items.length}</span></div>
+      <h2 className="mt-4 text-lg font-semibold">{String(title)}</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">{String(description)}</p>
+      <div className="mt-5 flex justify-between"><Button variant="ghost" size="sm" onClick={finish}>{chinese?"退出导览":"Exit"}</Button><Button size="sm" onClick={()=>step===items.length-1?finish():setStep(current=>current+1)}>{step===items.length-1?(chinese?"完成":"Done"):(chinese?"下一步":"Next")}<ArrowRight/></Button></div>
+    </aside>
+  </div>;
 }
 
 export function RmwCheckpoint({
@@ -197,22 +309,25 @@ export function RmwCheckpoint({
   taskId,
   memo,
   messages,
+  testMode,
+  deepSeekModel,
   onContinue,
 }: {
   locale: Locale;
   taskId: ResearchTaskId;
   memo: string;
   messages: Array<{ role: "user" | "assistant"; text: string }>;
+  testMode: boolean;
+  deepSeekModel: "deepseek-v4-flash" | "deepseek-v4-pro";
   onContinue: () => void;
 }) {
   const t = labels[locale];
   const [cards, setCards] = useState(() => createCaptureCards(taskId));
-  const [selectedId, setSelectedId] = useState("next");
-  const [extractionMode, setExtractionMode] = useState<"loading" | "live" | "demo" | "error">("loading");
-  const [editing, setEditing] = useState(false);
-  const selected = cards.find((card) => card.id === selectedId) || cards[0];
-  const [draft, setDraft] = useState(selected.content[locale]);
-  const reviewedCount = cards.filter((card) => card.reviewed).length;
+  const [relations, setRelations] = useState<CaptureRelation[]>(() => demoRelations);
+  const [mode, setMode] = useState<"loading" | "live" | "demo" | "error">("loading");
+  const [guideOpen, setGuideOpen] = useState(true);
+  const [earlyNotice, setEarlyNotice] = useState(false);
+  const remaining = useCheckpointCountdown(testMode);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -221,272 +336,179 @@ export function RmwCheckpoint({
         const response = await fetch("/api/extract", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ locale, taskId, memo, messages }),
+          body: JSON.stringify({ locale, taskId, memo, messages, model: deepSeekModel }),
           signal: controller.signal,
         });
-        const result = await response.json() as { mode?: "live" | "demo"; cards?: ExtractedCard[]; error?: string };
+        const result = await response.json() as {
+          mode?: "live" | "demo";
+          cards?: ExtractedCard[];
+          relations?: CaptureRelation[];
+          error?: string;
+        };
         if (!response.ok) throw new Error(result.error || "Extraction failed");
-        if (result.mode === "live" && Array.isArray(result.cards) && result.cards.length) {
+        if (result.mode === "live" && result.cards?.length) {
           const extracted = result.cards.map((card) => ({
             ...card,
             content: { "zh-CN": card.content, en: card.content },
             detail: { "zh-CN": card.detail, en: card.detail },
             source: { "zh-CN": card.source, en: card.source },
             why: { "zh-CN": card.why, en: card.why },
-            reviewed: false,
           }));
           setCards(extracted);
-          const nextAction = extracted.find((card) => card.kind === "next_action");
-          const nextSelectedId = nextAction?.id || extracted[0].id;
-          setSelectedId(nextSelectedId);
-          setDraft((nextAction || extracted[0]).content[locale]);
-          setExtractionMode("live");
-          eventLog("checkpoint_extraction_completed", { taskId, mode: "live", cardCount: extracted.length }, { stage: "checkpoint" });
+          if (result.relations?.length) setRelations(result.relations);
+          setMode("live");
+          eventLog("checkpoint_extraction_completed", {
+            taskId,
+            mode: "live",
+            cards: extracted,
+            relations: result.relations || [],
+          }, { stage: "checkpoint" });
           return;
         }
-        setExtractionMode("demo");
+        setMode("demo");
         eventLog("checkpoint_extraction_completed", { taskId, mode: "demo" }, { stage: "checkpoint" });
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
-        setExtractionMode("error");
+        setMode("error");
         eventLog("checkpoint_extraction_failed", { taskId }, { stage: "checkpoint" });
       }
     };
     void extract();
     return () => controller.abort();
-  }, [locale, memo, messages, taskId]);
+  }, [deepSeekModel, locale, memo, messages, taskId]);
 
-  const update = (id: string, patch: Partial<CaptureCard>, action: string) => {
-    setCards((current) => current.map((card) => card.id === id ? { ...card, ...patch, reviewed: true } : card));
-    eventLog(action, patch, { stage: "checkpoint", targetType: "reasoning_card", targetId: id });
-  };
-  const select = (id: string) => {
-    const card = cards.find((item) => item.id === id);
-    if (!card) return;
-    setSelectedId(id);
-    setDraft(card.content[locale]);
-    setEditing(false);
-    eventLog("checkpoint_card_selected", {}, { stage: "checkpoint", targetType: "reasoning_card", targetId: id });
-  };
-  const saveEdit = () => {
-    setCards((current) => current.map((card) => card.id === selected.id ? {
-      ...card,
-      content: { ...card.content, [locale]: draft },
-      reviewed: true,
-    } : card));
-    eventLog("checkpoint_card_edited", { locale }, { stage: "checkpoint", targetType: "reasoning_card", targetId: selected.id });
-    setEditing(false);
-  };
-  const mainGoal = cards.find((card) => card.goalLevel === "main")!;
-  const activeGoals = cards.filter((card) => card.goalLevel === "subgoal").slice(0, 4);
-  const suspendedGoals = cards.filter((card) => card.goalLevel === "suspended").slice(0, 3);
-  const rejected = cards.find((card) => card.kind === "path")!;
-  const nextAction = cards.find((card) => card.kind === "next_action")!;
+  const main = cards.find((card) => card.goalLevel === "main");
+  const active = cards.filter((card) => card.goalLevel === "subgoal").slice(0, 4);
+  const suspended = cards.filter((card) => card.goalLevel === "suspended").slice(0, 3);
+  const rejected = cards.find((card) => card.kind === "path");
 
-  return (
-    <div className="min-h-screen bg-[#f7f6f2] px-6 py-5">
-      <div className="mx-auto max-w-[1480px]">
-        <Timeline locale={locale} active="save" />
-        <header className="flex items-end justify-between py-6">
-          <div>
-            <Badge variant="secondary" className="mb-3"><Sparkle size={14} /> RMW save point · {extractionMode === "live" ? "DeepSeek" : extractionMode === "loading" ? (locale === "zh-CN" ? "提取中" : "extracting") : (locale === "zh-CN" ? "中性候选" : "neutral candidates")}</Badge>
-            <h1 className="text-3xl font-semibold tracking-tight">{t.title}</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{t.subtitle}</p>
+  return <div className="min-h-screen bg-[#f7f6f2] px-6 py-5">
+    <CheckpointGuide locale={locale} open={guideOpen} onOpenChange={setGuideOpen}/>
+    <div className="mx-auto max-w-[1480px]">
+      <ExperimentTimeline locale={locale} active="save" />
+      <header className="flex items-end justify-between py-6">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight">{t.title}</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{t.subtitle}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Badge variant={mode === "live" ? "default" : "secondary"}>{mode === "live" ? "DeepSeek" : mode === "loading" ? (locale === "zh-CN" ? "分析中" : "Analyzing") : (locale === "zh-CN" ? "演示数据" : "Demo data")}</Badge>
+          <button onClick={() => setGuideOpen(true)} aria-label={locale === "zh-CN" ? "查看说明" : "View guide"} className="grid size-9 place-items-center rounded-lg border bg-white hover:bg-muted"><Question size={18} /></button>
+        </div>
+      </header>
+
+      <section className="grid grid-cols-[1fr_1.15fr] gap-5">
+        <article data-tour="checkpoint-goals" className="rounded-2xl border bg-white p-5 shadow-[0_12px_40px_rgba(35,43,70,.05)]">
+          <div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">{t.main}</h2><Badge variant="outline"><Target size={13} />1</Badge></div>
+          {main && <StateTile card={main} locale={locale} />}
+          <div className="mt-4 grid grid-cols-[1.2fr_.8fr_.8fr] gap-3">
+            <div><p className="mb-2 text-[10px] font-semibold text-muted-foreground">{t.active} · {active.length}</p><div className="space-y-2">{active.map((card) => <StateTile key={card.id} card={card} locale={locale} />)}</div></div>
+            <div><p className="mb-2 text-[10px] font-semibold text-muted-foreground">{t.suspended} · {suspended.length}</p><div className="space-y-2">{suspended.map((card) => <StateTile key={card.id} card={card} locale={locale} />)}</div></div>
+            <div><p className="mb-2 text-[10px] font-semibold text-muted-foreground">{t.rejected}</p>{rejected && <StateTile card={rejected} locale={locale} />}</div>
           </div>
-          <div className="rounded-xl border bg-white px-4 py-3 text-right">
-            <p className="text-2xl font-semibold">{reviewedCount} / {cards.length}</p>
-            <p className="text-xs text-muted-foreground">{t.reviewed}</p>
-          </div>
-        </header>
+        </article>
 
-        <section className="mb-5 grid grid-cols-[1fr_1.35fr] gap-5">
-          <article className="rounded-2xl border bg-white p-5 shadow-[0_12px_40px_rgba(35,43,70,.05)]">
-            <div className="flex items-center gap-3">
-              <span className="grid size-10 place-items-center rounded-xl bg-primary text-white"><ArrowRight size={21} /></span>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-primary">{t.prompt}</p>
-                <p className="text-xs text-muted-foreground">{t.suggested}</p>
-              </div>
-            </div>
-            <p className="mt-5 text-xl font-semibold leading-7">{nextAction.content[locale]}</p>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{nextAction.detail[locale]}</p>
-            <div className="mt-5 flex gap-2">
-              <Button size="sm" onClick={() => update(nextAction.id, { status: "active" }, "checkpoint_card_accepted")}><Check />{t.accept}</Button>
-              <Button size="sm" variant="outline" onClick={() => { select(nextAction.id); setEditing(true); }}><NotePencil />{t.edit}</Button>
-              <Button size="sm" variant="outline" onClick={() => update(nextAction.id, { priority: nextAction.priority === "pinned" ? "normal" : "pinned" }, "checkpoint_card_pin_toggled")}><PushPin />{t.pin}</Button>
-            </div>
-          </article>
-          <article className="rounded-2xl border bg-white p-5 shadow-[0_12px_40px_rgba(35,43,70,.05)]">
-            <div className="mb-3 flex items-center justify-between">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t.main}</p>
-              <Badge variant="outline"><Target size={13} />1</Badge>
-            </div>
-            <GoalTile card={mainGoal} locale={locale} selected={selectedId === mainGoal.id} onClick={() => select(mainGoal.id)} />
-            <div className="mt-4 grid grid-cols-[1.15fr_.85fr_.7fr] gap-3">
-              <div>
-                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{t.active} · {activeGoals.length}/4</p>
-                <div className="space-y-2">{activeGoals.map((card) => <GoalTile key={card.id} card={card} locale={locale} selected={selectedId === card.id} onClick={() => select(card.id)} />)}</div>
-              </div>
-              <div>
-                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{t.suspended} · {suspendedGoals.length}/3</p>
-                <div className="space-y-2">{suspendedGoals.map((card) => <GoalTile key={card.id} card={card} locale={locale} selected={selectedId === card.id} onClick={() => select(card.id)} />)}</div>
-              </div>
-              <div>
-                <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{t.resolved}</p>
-                <GoalTile card={rejected} locale={locale} selected={selectedId === rejected.id} onClick={() => select(rejected.id)} />
-              </div>
-            </div>
-          </article>
-        </section>
+        <article data-tour="checkpoint-state" className="rounded-2xl border bg-white p-5 shadow-[0_12px_40px_rgba(35,43,70,.05)]">
+          <div className="mb-4 flex items-center justify-between"><div><h2 className="font-semibold">{t.candidates}</h2><p className="mt-1 text-xs text-muted-foreground">{locale === "zh-CN" ? "由 DeepSeek 归纳；不声称读取你的真实想法。" : "Summarized by DeepSeek; it does not claim access to your mind."}</p></div><Badge variant="secondary">{cards.length}</Badge></div>
+          <div className="grid max-h-[360px] grid-cols-2 gap-2 overflow-y-auto pr-1">{cards.filter((card) => card.goalLevel !== "main").map((card) => <StateTile key={card.id} card={card} locale={locale} />)}</div>
+        </article>
+      </section>
 
-        <section className="grid min-h-[360px] grid-cols-[1.15fr_.85fr] overflow-hidden rounded-2xl border bg-white shadow-[0_12px_40px_rgba(35,43,70,.05)]">
-          <div className="border-r p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="font-semibold">{t.candidates}</h2>
-                <p className="mt-1 text-xs text-muted-foreground">{t.notMind}</p>
-              </div>
-              <Badge variant="secondary">{cards.length} {t.cards}</Badge>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              {cards.map((card) => (
-                <button key={card.id} onClick={() => select(card.id)} className={`rounded-xl border p-3 text-left transition ${selectedId === card.id ? "border-primary bg-secondary/60 ring-2 ring-primary/15" : "hover:bg-muted/50"}`}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{card.goalLevel || card.kind}</span>
-                    <span className={`size-2 rounded-full ${card.reviewed ? "bg-emerald-500" : "bg-amber-400"}`} />
-                  </div>
-                  <p className="mt-2 line-clamp-2 text-xs font-semibold leading-5">{card.content[locale]}</p>
-                </button>
-              ))}
-            </div>
-          </div>
-          <aside className="p-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline">{selected.goalLevel || selected.kind}</Badge>
-                  {selected.priority === "pinned" && <PushPin size={15} weight="fill" className="text-primary" />}
-                </div>
-                {editing ? (
-                  <Textarea className="mt-4 min-h-24 text-sm leading-6" value={draft} onChange={(event) => setDraft(event.target.value)} />
-                ) : (
-                  <h3 className="mt-4 text-lg font-semibold leading-7">{selected.content[locale]}</h3>
-                )}
-              </div>
-              <span className={`flex items-center gap-1 text-xs font-semibold ${selected.status === "uncertain" ? "text-amber-700" : selected.status === "expired" ? "text-slate-500" : "text-emerald-700"}`}>
-                {selected.status === "uncertain" ? <WarningCircle /> : selected.status === "expired" ? <PauseCircle /> : <CheckCircle />}
-                {selected.status}
-              </span>
-            </div>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">{selected.detail[locale]}</p>
-            <div className="mt-5 rounded-xl bg-muted/55 p-4">
-              <div className="flex gap-3"><LinkSimple className="mt-0.5 shrink-0 text-primary" /><div><p className="text-xs font-semibold">{t.evidence}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{selected.source[locale]}</p></div></div>
-              <div className="mt-4 flex gap-3"><Brain className="mt-0.5 shrink-0 text-primary" /><div><p className="text-xs font-semibold">{t.why}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{selected.why[locale]}</p></div></div>
-            </div>
-            <div className="mt-5">
-              <div className="mb-2 flex justify-between text-xs"><span>{t.confidence}</span><span className="font-mono">{selected.confidence}%</span></div>
-              <Progress value={selected.confidence} className="h-1.5" />
-            </div>
-            <div className="mt-6 flex flex-wrap gap-2">
-              {editing ? (
-                <>
-                  <Button size="sm" onClick={saveEdit}><Check />{t.accept}</Button>
-                  <Button size="sm" variant="outline" onClick={() => setEditing(false)}>Cancel</Button>
-                </>
-              ) : (
-                <>
-                  <Button size="sm" onClick={() => update(selected.id, { status: "active" }, "checkpoint_card_accepted")}><Check />{t.accept}</Button>
-                  <Button size="sm" variant="outline" onClick={() => setEditing(true)}><NotePencil />{t.edit}</Button>
-                  <Button size="sm" variant="outline" onClick={() => update(selected.id, { priority: selected.priority === "pinned" ? "normal" : "pinned" }, "checkpoint_card_pin_toggled")}><PushPin />{t.pin}</Button>
-                  <Button size="sm" variant="outline" onClick={() => update(selected.id, { status: "uncertain" }, "checkpoint_card_marked_uncertain")}><WarningCircle />{t.uncertain}</Button>
-                  <Button size="sm" variant="ghost" onClick={() => update(selected.id, { status: "expired" }, "checkpoint_card_expired")}><XCircle />{t.expire}</Button>
-                </>
-              )}
-            </div>
-          </aside>
-        </section>
+      <section data-tour="checkpoint-network" className="mt-5">
+        <div className="mb-3 flex items-center justify-between"><div><h2 className="flex items-center gap-2 font-semibold"><Graph size={20} className="text-primary" />{t.network}</h2><p className="mt-1 text-xs text-muted-foreground">{locale === "zh-CN" ? "节点与关系均来自本次 DeepSeek 提取结果。" : "Nodes and relations come from this DeepSeek extraction."}</p></div><Badge variant="outline">{relations.length} relations</Badge></div>
+        <CheckpointNetwork cards={cards} relations={relations} locale={locale} />
+      </section>
 
-        <div className="mt-5 flex items-center justify-between rounded-2xl border bg-white p-4">
-          <div className="flex items-center gap-3 text-sm">
-            <Clock size={20} className="text-primary" />
-            <span><strong>{reviewedCount}/{cards.length}</strong> {t.reviewed} · {cards.filter((card) => card.priority === "pinned").length} pinned</span>
-          </div>
-          <Button className="h-11 px-6" onClick={() => {
-            eventLog("checkpoint_completed", { taskId, reviewedCount, totalCards: cards.length, pinnedCount: cards.filter((card) => card.priority === "pinned").length }, { stage: "checkpoint" });
+      <div className="mt-5 flex items-center justify-between rounded-2xl border bg-white p-4">
+        <div className="flex items-center gap-3 text-sm"><Clock size={20} className="text-primary" /><div><p className="font-medium">{testMode ? (locale === "zh-CN" ? "测试模式：可直接继续" : "Test mode: continue anytime") : remaining > 0 ? t.waiting : (locale === "zh-CN" ? "可以进入中断任务" : "Interruption task is ready")}</p>{!testMode&&<p className="text-xs text-muted-foreground">{remaining > 0 ? formatClock(remaining) : "00:00"}</p>}</div></div>
+        <div className="text-right">
+          {!testMode&&earlyNotice && remaining > 0 && <p role="status" className="mb-2 text-xs text-amber-700">{t.early}</p>}
+          <Button variant={testMode||remaining === 0 ? "default" : "secondary"} className="h-11 px-6" onClick={() => {
+            if (!testMode&&remaining > 0) {
+              setEarlyNotice(true);
+              eventLog("checkpoint_continue_blocked", { remaining }, { stage: "checkpoint" });
+              return;
+            }
+            eventLog("checkpoint_completed", { taskId, cards, relations }, { stage: "checkpoint" });
             onContinue();
           }}>{t.saveAndBreak}<ArrowRight /></Button>
         </div>
       </div>
     </div>
-  );
+  </div>;
 }
 
-const nbackSequence = ["A", "C", "A", "B", "D", "B", "C", "D"];
+const letterSequence = ["A", "C", "A", "B", "D", "B", "C", "D"];
+const colorTrials = [
+  { word: "蓝", color: "red", answer: "red" },
+  { word: "绿", color: "blue", answer: "blue" },
+  { word: "红", color: "green", answer: "green" },
+  { word: "蓝", color: "blue", answer: "blue" },
+  { word: "红", color: "red", answer: "red" },
+  { word: "绿", color: "green", answer: "green" },
+] as const;
+const colorCss = { red: "text-red-600", blue: "text-blue-600", green: "text-emerald-600" };
+const colorWordEn: Record<string, string> = { 红: "RED", 蓝: "BLUE", 绿: "GREEN" };
 
-export function InterruptionTask({ locale, onComplete }: { locale: Locale; onComplete: () => void }) {
+export function InterruptionTask({ locale, onComplete }: { locale: Locale; fastMode: boolean; onComplete: () => void }) {
   const t = labels[locale];
+  const [game, setGame] = useState<"letter" | "color">("letter");
   const [index, setIndex] = useState(2);
   const [correct, setCorrect] = useState(0);
-  const answered = index - 2;
-  const complete = index >= nbackSequence.length;
-  const accuracy = answered ? Math.round((correct / answered) * 100) : 0;
-  const expectedSame = !complete && nbackSequence[index] === nbackSequence[index - 2];
+  const [letterPassed, setLetterPassed] = useState(false);
+  const [colorIndex, setColorIndex] = useState(0);
+  const [colorCorrect, setColorCorrect] = useState(0);
+  const letterComplete = index >= letterSequence.length;
+  const colorComplete = colorIndex >= colorTrials.length;
+  const letterTotal = letterSequence.length - 2;
+  const expectedSame = !letterComplete && letterSequence[index] === letterSequence[index - 2];
 
-  const answer = (same: boolean) => {
+  const answerLetter = (same: boolean) => {
     const isCorrect = same === expectedSame;
     if (isCorrect) setCorrect((value) => value + 1);
-    eventLog("nback_trial_answered", {
-      trial: index - 1,
-      stimulus: nbackSequence[index],
-      expectedSame,
-      answerSame: same,
-      correct: isCorrect,
-    }, { stage: "interruption", targetType: "nback_trial", targetId: String(index - 1) });
+    eventLog("letter_game_answered", { index, same, expectedSame, correct: isCorrect }, { stage: "interruption" });
     setIndex((value) => value + 1);
   };
+  const restartLetter = () => {
+    setIndex(2);
+    setCorrect(0);
+  };
+  const answerColor = (answer: "red" | "blue" | "green") => {
+    const trial = colorTrials[colorIndex];
+    const isCorrect = answer === trial.answer;
+    if (isCorrect) setColorCorrect((value) => value + 1);
+    eventLog("color_game_answered", { index: colorIndex, answer, expected: trial.answer, correct: isCorrect }, { stage: "interruption" });
+    setColorIndex((value) => value + 1);
+  };
+  const restartColor = () => {
+    setColorIndex(0);
+    setColorCorrect(0);
+  };
 
-  const history = useMemo(() => nbackSequence.slice(0, Math.min(index, nbackSequence.length)), [index]);
-
-  return (
-    <div className="min-h-screen bg-[#f7f6f2] px-6 py-5">
-      <div className="mx-auto max-w-5xl">
-        <Timeline locale={locale} active="break" />
-        <header className="py-10 text-center">
-          <Badge variant="secondary" className="mb-4"><PauseCircle size={14} />{t.interruption}</Badge>
-          <h1 className="text-3xl font-semibold">{t.nback}</h1>
-          <p className="mt-3 text-sm text-muted-foreground">{t.nbackHint}</p>
-        </header>
-        <section className="mx-auto max-w-2xl rounded-2xl border bg-white p-8 text-center shadow-[0_18px_60px_rgba(35,40,65,.07)]">
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>{t.trial} {Math.min(answered + 1, nbackSequence.length - 2)} / {nbackSequence.length - 2}</span>
-            <span className="font-mono">00:45</span>
-          </div>
-          <Progress value={(answered / (nbackSequence.length - 2)) * 100} className="mt-3 h-1.5" />
-          {!complete ? (
-            <>
-              <div className="my-10 flex items-center justify-center gap-3">
-                {history.slice(-3).map((letter, position) => (
-                  <span key={`${letter}-${position}`} className={`grid place-items-center rounded-2xl border font-mono font-semibold ${position === history.slice(-3).length - 1 ? "size-32 bg-primary text-6xl text-white shadow-lg" : "size-16 bg-muted text-2xl text-muted-foreground"}`}>{letter}</span>
-                ))}
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <Button variant="outline" className="h-14 text-base" onClick={() => answer(false)}>{t.different}</Button>
-                <Button className="h-14 text-base" onClick={() => answer(true)}>{t.same}</Button>
-              </div>
-            </>
-          ) : (
-            <div className="py-10">
-              <div className="mx-auto grid size-16 place-items-center rounded-2xl bg-[var(--active-soft)] text-[var(--active)]"><CheckCircle size={36} weight="fill" /></div>
-              <p className="mt-5 text-2xl font-semibold">{accuracy}%</p>
-              <p className="mt-2 text-sm text-muted-foreground">{t.accuracy}</p>
-            </div>
-          )}
-          <Button variant={complete ? "default" : "ghost"} className="mt-5 w-full" onClick={() => {
-            eventLog("interruption_completed", { trialsAnswered: answered, correct, accuracy }, { stage: "interruption" });
-            onComplete();
-          }}>{t.finish}<ArrowRight /></Button>
-        </section>
-      </div>
+  return <div className="min-h-screen bg-[#f7f6f2] px-6 py-5">
+    <div className="mx-auto max-w-5xl">
+      <ExperimentTimeline locale={locale} active="break" />
+      <header className="py-9 text-center"><Badge variant="secondary" className="mb-4"><PauseCircle size={14} />{t.interruption}</Badge><h1 className="text-3xl font-semibold">{game === "letter" ? t.letterGame : t.colorGame}</h1><p className="mt-3 text-sm text-muted-foreground">{game === "letter" ? t.letterHint : t.colorHint}</p></header>
+      <section className="mx-auto max-w-2xl rounded-2xl border bg-white p-8 text-center shadow-[0_18px_60px_rgba(35,40,65,.07)]">
+        {game === "letter" ? <>
+          <div className="flex items-center justify-between text-xs text-muted-foreground"><span>{t.trial} {Math.min(index - 1, letterTotal)} / {letterTotal}</span><span>{correct} / {Math.max(0, index - 2)}</span></div>
+          <Progress value={((index - 2) / letterTotal) * 100} className="mt-3 h-1.5" />
+          {!letterComplete ? <>
+            <div className="my-10 flex items-center justify-center gap-3">{letterSequence.slice(0, index + 1).slice(-3).map((letter, position, current) => <span key={`${letter}-${position}`} className={`grid place-items-center rounded-2xl border font-mono font-semibold ${position === current.length - 1 ? "size-32 bg-primary text-6xl text-white shadow-lg" : "size-16 bg-muted text-2xl text-muted-foreground"}`}>{letter}</span>)}</div>
+            <div className="grid grid-cols-2 gap-3"><Button variant="outline" className="h-14 text-base" onClick={() => answerLetter(false)}>{t.different}</Button><Button className="h-14 text-base" onClick={() => answerLetter(true)}>{t.same}</Button></div>
+          </> : <div className="py-8"><ScoreResult score={correct} total={letterTotal} locale={locale} />{correct === letterTotal ? <Button className="mt-6 w-full" onClick={() => { setLetterPassed(true); setGame("color"); eventLog("letter_game_passed", { score: correct }, { stage: "interruption" }); }}>{t.nextGame}<ArrowRight /></Button> : <Button className="mt-6 w-full" variant="outline" onClick={restartLetter}>{t.retry}</Button>}</div>}
+        </> : <>
+          <div className="flex items-center justify-between text-xs text-muted-foreground"><span>{t.trial} {Math.min(colorIndex + 1, colorTrials.length)} / {colorTrials.length}</span><span>{colorCorrect} / {colorIndex}</span></div>
+          <Progress value={(colorIndex / colorTrials.length) * 100} className="mt-3 h-1.5" />
+          {!colorComplete ? <><div className="my-14"><p className={`text-7xl font-bold ${colorCss[colorTrials[colorIndex].color]}`}>{locale === "zh-CN" ? colorTrials[colorIndex].word : colorWordEn[colorTrials[colorIndex].word]}</p></div><div className="grid grid-cols-3 gap-3">{(["red", "blue", "green"] as const).map((color) => <Button key={color} variant="outline" className="h-14 text-base" onClick={() => answerColor(color)}>{locale === "zh-CN" ? { red: "红色", blue: "蓝色", green: "绿色" }[color] : color[0].toUpperCase() + color.slice(1)}</Button>)}</div></> : <div className="py-8"><ScoreResult score={colorCorrect} total={colorTrials.length} locale={locale} />{colorCorrect === colorTrials.length && letterPassed ? <Button className="mt-6 w-full" onClick={() => { eventLog("interruption_completed", { letterScore: correct, colorScore: colorCorrect, perfect: true }, { stage: "interruption" }); onComplete(); }}>{t.finish}<ArrowRight /></Button> : <Button className="mt-6 w-full" variant="outline" onClick={restartColor}>{t.retry}</Button>}</div>}
+        </>}
+        <p className="mt-5 text-xs text-muted-foreground">{t.fullScore}</p>
+      </section>
     </div>
-  );
+  </div>;
+}
+
+function ScoreResult({ score, total, locale }: { score: number; total: number; locale: Locale }) {
+  const perfect = score === total;
+  return <><div className={`mx-auto grid size-16 place-items-center rounded-2xl ${perfect ? "bg-[var(--active-soft)] text-[var(--active)]" : "bg-amber-50 text-amber-700"}`}>{perfect ? <CheckCircle size={36} weight="fill" /> : <WarningCircle size={36} />}</div><p className="mt-5 text-2xl font-semibold">{score} / {total}</p><p className="mt-2 text-sm text-muted-foreground">{perfect ? (locale === "zh-CN" ? "满分通过" : "Perfect score") : (locale === "zh-CN" ? "需要满分才能继续" : "A perfect score is required")}</p></>;
 }
