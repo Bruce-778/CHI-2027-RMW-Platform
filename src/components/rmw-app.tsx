@@ -28,6 +28,7 @@ import { TimedButton } from "@/components/timed-button";
 
 type Screen = "landing" | "brief" | "survey" | "work" | "checkpoint" | "interruption" | "workspace" | "recall" | "complete";
 type ChatMessage = { role: "user" | "assistant"; text: string };
+type DeepSeekModel = "deepseek-v4-flash" | "deepseek-v4-pro";
 
 const copy = {
   "zh-CN": {
@@ -71,6 +72,8 @@ export function RmwApp() {
   const taskId: ResearchTaskId = "waste";
   const [memo, setMemo] = useState(() => getResearchTask("waste").starterMemo["zh-CN"]);
   const [chat, setChat] = useState<ChatMessage[]>(() => [{ role: "assistant", text: getResearchTask("waste").assistantIntro["zh-CN"] }]);
+  const [testMode, setTestMode] = useState(true);
+  const [deepSeekModel, setDeepSeekModel] = useState<DeepSeekModel>("deepseek-v4-flash");
   const t = copy[locale];
 
   useEffect(() => {
@@ -79,6 +82,7 @@ export function RmwApp() {
     const c = params.get("condition") as Condition | null;
     const lang = params.get("lang") as Locale | null;
     const frame = requestAnimationFrame(() => {
+      setTestMode(params.get("timed") !== "1");
       if (lang === "en" || lang === "zh-CN") setLocale(lang);
       if (c && ["summary", "notes", "rmw"].includes(c)) setCondition(c);
       if (view === "checkpoint") setScreen("checkpoint");
@@ -97,7 +101,7 @@ export function RmwApp() {
         <div className="max-w-md"><SquaresFour size={42} className="mx-auto mb-5 text-primary" /><h1 className="text-2xl font-semibold">{t.desktop}</h1><p className="mt-3 text-muted-foreground">{t.desktopText}</p></div>
       </div>
       <main className="desktop-app min-h-screen">
-        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} onStart={() => {
+        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} deepSeekModel={deepSeekModel} setDeepSeekModel={setDeepSeekModel} onStart={() => {
           const task = getResearchTask("waste");
           setMemo(task.starterMemo[locale]);
           setChat([{ role: "assistant", text: task.assistantIntro[locale] }]);
@@ -106,11 +110,11 @@ export function RmwApp() {
         }} t={t} />}
         {screen === "brief" && <TaskBrief locale={locale} taskId={taskId} setScreen={setScreen} />}
         {screen === "survey" && <Survey locale={locale} taskId={taskId} setScreen={setScreen} t={t} />}
-        {screen === "work" && <Workspace key={`work-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="work" memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} t={t} />}
-        {screen === "checkpoint" && <RmwCheckpoint locale={locale} taskId={taskId} memo={memo} messages={chat} onContinue={() => setScreen("interruption")} />}
-        {screen === "interruption" && <InterruptionTask locale={locale} onComplete={() => setScreen("recall")} />}
+        {screen === "work" && <Workspace key={`work-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="work" memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} deepSeekModel={deepSeekModel} t={t} />}
+        {screen === "checkpoint" && <RmwCheckpoint locale={locale} taskId={taskId} memo={memo} messages={chat} testMode={testMode} deepSeekModel={deepSeekModel} onContinue={() => setScreen("interruption")} />}
+        {screen === "interruption" && <InterruptionTask locale={locale} fastMode={testMode} onComplete={() => setScreen("recall")} />}
         {screen === "recall" && <Recall locale={locale} setScreen={setScreen} t={t} />}
-        {screen === "workspace" && <Workspace key={`recovery-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="recovery" memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} t={t} />}
+        {screen === "workspace" && <Workspace key={`recovery-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="recovery" memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} deepSeekModel={deepSeekModel} t={t} />}
         {screen === "complete" && <Complete setScreen={setScreen} t={t} />}
       </main>
     </>
@@ -126,11 +130,15 @@ function LanguageChoice({ locale, setLocale }: { locale: Locale; setLocale: (l: 
 function Landing({
   locale,
   setLocale,
+  deepSeekModel,
+  setDeepSeekModel,
   onStart,
   t,
 }: {
   locale: Locale;
   setLocale: (l: Locale) => void;
+  deepSeekModel: DeepSeekModel;
+  setDeepSeekModel: (model: DeepSeekModel) => void;
   onStart: () => void;
   t: typeof copy[Locale];
 }) {
@@ -143,6 +151,11 @@ function Landing({
       <div className="rounded-2xl border bg-white/90 p-8 shadow-[0_24px_70px_rgba(34,42,70,.10)] backdrop-blur">
         <label className="text-sm font-semibold" htmlFor="anonymous-id">{t.anonymous}</label>
         <Input id="anonymous-id" autoComplete="off" value={anonymousId} onChange={event=>setAnonymousId(event.target.value)} placeholder={t.anonymousPlaceholder} className="mt-3 h-12" />
+        <label className="mt-5 block text-sm font-semibold" htmlFor="deepseek-model">{locale === "zh-CN" ? "AI 模型" : "AI model"}</label>
+        <select id="deepseek-model" value={deepSeekModel} onChange={event=>setDeepSeekModel(event.target.value as DeepSeekModel)} className="mt-2 h-11 w-full rounded-lg border bg-white px-3 text-sm focus-visible:outline-2 focus-visible:outline-ring">
+          <option value="deepseek-v4-flash">DeepSeek V4 Flash · {locale === "zh-CN" ? "速度优先" : "Faster"}</option>
+          <option value="deepseek-v4-pro">DeepSeek V4 Pro · {locale === "zh-CN" ? "推理优先" : "Stronger reasoning"}</option>
+        </select>
         <label className="mt-7 flex cursor-pointer items-start gap-3 text-sm leading-6"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} className="mt-1 size-4 accent-[var(--primary)]"/><span>{t.consent}</span></label>
         <TimedButton seconds={5} ready={consent&&Boolean(anonymousId.trim())} locale={locale} label={t.enter} blockedLabel={locale==="zh-CN"?"请填写匿名编号并勾选同意":"Enter an anonymous ID and provide consent"} onClick={()=>{eventLog("consent_submitted",{locale,access:"anonymous",anonymousId:anonymousId.trim().slice(0,64)});onStart()}} className="mt-7 h-12 w-full" />
         <p className="mt-3 text-center text-[11px] text-muted-foreground">{locale==="zh-CN"?"按钮将在阅读时间结束且信息完整后开放。":"The button unlocks after the reading time and required fields are complete."}</p>
@@ -406,6 +419,8 @@ function Workspace({
   chat,
   setChat,
   setScreen,
+  testMode,
+  deepSeekModel,
   t,
 }: {
   locale: Locale;
@@ -417,6 +432,8 @@ function Workspace({
   chat: ChatMessage[];
   setChat: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   setScreen: (screen: Screen) => void;
+  testMode: boolean;
+  deepSeekModel: DeepSeekModel;
   t: typeof copy[Locale];
 }) {
   const task=getResearchTask(taskId);
@@ -488,6 +505,7 @@ function Workspace({
         body:JSON.stringify({
           locale,
           taskId,
+          model: deepSeekModel,
           messages:history.map(item=>({role:item.role,content:item.text})),
         }),
       });
@@ -541,7 +559,7 @@ function Workspace({
       </button>
       <section ref={rightColumnRef} className="grid min-h-0 min-w-0 overflow-hidden bg-white" style={{gridTemplateRows:`${rightTopRatio}fr 10px ${100-rightTopRatio}fr`}}>
         {phase==="work"
-          ?<PhaseOnePanel locale={locale} taskId={taskId} memo={memo} setScreen={setScreen}/>
+          ?<PhaseOnePanel locale={locale} taskId={taskId} memo={memo} remaining={remainingSeconds} testMode={testMode} setScreen={setScreen}/>
           :<RecoveryPanel locale={locale} condition={condition} cards={cards} selected={selected} setSelected={setSelected} updateStatus={updateStatus} togglePin={togglePin} updateContent={updateContent} setScreen={setScreen} t={t}/>}
         <button
           type="button"
@@ -603,7 +621,7 @@ function MemoPanel({locale,memo,setMemo,t}:{locale:Locale;memo:string;setMemo:(s
   </section>;
 }
 
-function PhaseOnePanel({locale,taskId,memo,setScreen}:{locale:Locale;taskId:ResearchTaskId;memo:string;setScreen:(screen:Screen)=>void}) {
+function PhaseOnePanel({locale,taskId,memo,remaining,testMode,setScreen}:{locale:Locale;taskId:ResearchTaskId;memo:string;remaining:number;testMode:boolean;setScreen:(screen:Screen)=>void}) {
   const task=getResearchTask(taskId);
   const [completed,setCompleted]=useState<Set<string>>(()=>new Set());
   const criterionId=(goalId:string,index:number)=>`${goalId}:${index}`;
@@ -617,6 +635,7 @@ function PhaseOnePanel({locale,taskId,memo,setScreen}:{locale:Locale;taskId:Rese
   const completedGoalCount=phaseOneGoals.filter(goal=>goal.criteria.every((_,index)=>completed.has(criterionId(goal.id,index)))).length;
   const totalCriteria=phaseOneGoals.reduce((total,goal)=>total+goal.criteria.length,0);
   const memoCount=locale==="zh-CN"?memo.replace(/\s/g,"").length:(memo.trim()?memo.trim().split(/\s+/).length:0);
+  const checkpointReady=testMode||remaining<=180;
   return <section data-tour="goals" className="flex min-h-0 flex-col bg-[#fbfcfe]">
     <div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><Target size={20} className="text-primary"/>{locale==="zh-CN"?"第一阶段目标":"Phase 1 goals"}</h2><Badge variant="outline" className="bg-white text-[10px]">{completedGoalCount} / {phaseOneGoals.length} {locale==="zh-CN"?"个目标":"goals"}</Badge></div>
     <div className="panel-scroll min-h-0 flex-1 overflow-y-auto px-5 py-4">
@@ -629,7 +648,7 @@ function PhaseOnePanel({locale,taskId,memo,setScreen}:{locale:Locale;taskId:Rese
         })}</div>
       </section>)}</div>
     </div>
-    <div className="shrink-0 border-t bg-white px-5 py-3"><div className="mb-2 flex justify-between text-[10px] text-muted-foreground"><span>{locale==="zh-CN"?"当前工作区":"Current workspace"}</span><span>{memoCount} {locale==="zh-CN"?"字":"words"} · {completed.size}/{totalCriteria} {locale==="zh-CN"?"评价点":"criteria"}</span></div><TimedButton seconds={10} locale={locale} label={locale==="zh-CN"?"保存推理位置并进入中断任务":"Save reasoning position and begin interruption"} className="h-11 w-full text-sm" onClick={()=>{eventLog("phase_one_checkpoint_requested",{taskId,completedGoals:completedGoalCount,completedCriteria:completed.size,totalCriteria,memoCount},{stage:"research_work"});setScreen("checkpoint")}} /></div>
+    <div className="shrink-0 border-t bg-white px-5 py-3"><div className="mb-2 flex justify-between text-[10px] text-muted-foreground"><span>{checkpointReady?(locale==="zh-CN"?"保存窗口已开放":"Save window open"):(locale==="zh-CN"?"最后 3 分钟开放保存窗口":"Save opens in the final 3 minutes")}</span><span>{memoCount} {locale==="zh-CN"?"字":"words"} · {completed.size}/{totalCriteria} {locale==="zh-CN"?"评价点":"criteria"}</span></div><TimedButton seconds={10} ready={checkpointReady} locale={locale} label={locale==="zh-CN"?"保存推理位置并进入中断任务":"Save reasoning position and begin interruption"} blockedLabel={locale==="zh-CN"?"保存窗口尚未开放":"Save window not open yet"} className="h-11 w-full text-sm" onClick={()=>{eventLog("phase_one_checkpoint_requested",{taskId,completedGoals:completedGoalCount,completedCriteria:completed.size,totalCriteria,memoCount,remaining},{stage:"research_work"});setScreen("checkpoint")}} /></div>
   </section>;
 }
 
