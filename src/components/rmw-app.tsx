@@ -28,7 +28,6 @@ import { TimedButton } from "@/components/timed-button";
 
 type Screen = "landing" | "brief" | "survey" | "work" | "checkpoint" | "interruption" | "workspace" | "recall" | "complete";
 type ChatMessage = { role: "user" | "assistant"; text: string };
-type DeepSeekModel = "deepseek-v4-flash" | "deepseek-v4-pro";
 
 const copy = {
   "zh-CN": {
@@ -73,7 +72,6 @@ export function RmwApp() {
   const [memo, setMemo] = useState(() => getResearchTask("waste").starterMemo["zh-CN"]);
   const [chat, setChat] = useState<ChatMessage[]>(() => [{ role: "assistant", text: getResearchTask("waste").assistantIntro["zh-CN"] }]);
   const [testMode, setTestMode] = useState(true);
-  const [deepSeekModel, setDeepSeekModel] = useState<DeepSeekModel>("deepseek-v4-flash");
   const t = copy[locale];
 
   useEffect(() => {
@@ -101,7 +99,7 @@ export function RmwApp() {
         <div className="max-w-md"><SquaresFour size={42} className="mx-auto mb-5 text-primary" /><h1 className="text-2xl font-semibold">{t.desktop}</h1><p className="mt-3 text-muted-foreground">{t.desktopText}</p></div>
       </div>
       <main className="desktop-app min-h-screen">
-        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} deepSeekModel={deepSeekModel} setDeepSeekModel={setDeepSeekModel} onStart={() => {
+        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} onStart={() => {
           const task = getResearchTask("waste");
           setMemo(task.starterMemo[locale]);
           setChat([{ role: "assistant", text: task.assistantIntro[locale] }]);
@@ -110,11 +108,11 @@ export function RmwApp() {
         }} t={t} />}
         {screen === "brief" && <TaskBrief locale={locale} taskId={taskId} setScreen={setScreen} />}
         {screen === "survey" && <Survey locale={locale} taskId={taskId} setScreen={setScreen} t={t} />}
-        {screen === "work" && <Workspace key={`work-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="work" memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} deepSeekModel={deepSeekModel} t={t} />}
-        {screen === "checkpoint" && <RmwCheckpoint locale={locale} taskId={taskId} memo={memo} messages={chat} testMode={testMode} deepSeekModel={deepSeekModel} onContinue={() => setScreen("interruption")} />}
+        {screen === "work" && <Workspace key={`work-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="work" memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} t={t} />}
+        {screen === "checkpoint" && <RmwCheckpoint locale={locale} taskId={taskId} memo={memo} messages={chat} testMode={testMode} onBack={() => setScreen("work")} onContinue={() => setScreen("interruption")} />}
         {screen === "interruption" && <InterruptionTask locale={locale} fastMode={testMode} onComplete={() => setScreen("recall")} />}
         {screen === "recall" && <Recall locale={locale} setScreen={setScreen} t={t} />}
-        {screen === "workspace" && <Workspace key={`recovery-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="recovery" memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} deepSeekModel={deepSeekModel} t={t} />}
+        {screen === "workspace" && <Workspace key={`recovery-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="recovery" memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} t={t} />}
         {screen === "complete" && <Complete setScreen={setScreen} t={t} />}
       </main>
     </>
@@ -130,15 +128,11 @@ function LanguageChoice({ locale, setLocale }: { locale: Locale; setLocale: (l: 
 function Landing({
   locale,
   setLocale,
-  deepSeekModel,
-  setDeepSeekModel,
   onStart,
   t,
 }: {
   locale: Locale;
   setLocale: (l: Locale) => void;
-  deepSeekModel: DeepSeekModel;
-  setDeepSeekModel: (model: DeepSeekModel) => void;
   onStart: () => void;
   t: typeof copy[Locale];
 }) {
@@ -151,11 +145,6 @@ function Landing({
       <div className="rounded-2xl border bg-white/90 p-8 shadow-[0_24px_70px_rgba(34,42,70,.10)] backdrop-blur">
         <label className="text-sm font-semibold" htmlFor="anonymous-id">{t.anonymous}</label>
         <Input id="anonymous-id" autoComplete="off" value={anonymousId} onChange={event=>setAnonymousId(event.target.value)} placeholder={t.anonymousPlaceholder} className="mt-3 h-12" />
-        <label className="mt-5 block text-sm font-semibold" htmlFor="deepseek-model">{locale === "zh-CN" ? "AI 模型" : "AI model"}</label>
-        <select id="deepseek-model" value={deepSeekModel} onChange={event=>setDeepSeekModel(event.target.value as DeepSeekModel)} className="mt-2 h-11 w-full rounded-lg border bg-white px-3 text-sm focus-visible:outline-2 focus-visible:outline-ring">
-          <option value="deepseek-v4-flash">DeepSeek V4 Flash · {locale === "zh-CN" ? "速度优先" : "Faster"}</option>
-          <option value="deepseek-v4-pro">DeepSeek V4 Pro · {locale === "zh-CN" ? "推理优先" : "Stronger reasoning"}</option>
-        </select>
         <label className="mt-7 flex cursor-pointer items-start gap-3 text-sm leading-6"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} className="mt-1 size-4 accent-[var(--primary)]"/><span>{t.consent}</span></label>
         <TimedButton seconds={5} ready={consent&&Boolean(anonymousId.trim())} locale={locale} label={t.enter} blockedLabel={locale==="zh-CN"?"请填写匿名编号并勾选同意":"Enter an anonymous ID and provide consent"} onClick={()=>{eventLog("consent_submitted",{locale,access:"anonymous",anonymousId:anonymousId.trim().slice(0,64)});onStart()}} className="mt-7 h-12 w-full" />
         <p className="mt-3 text-center text-[11px] text-muted-foreground">{locale==="zh-CN"?"按钮将在阅读时间结束且信息完整后开放。":"The button unlocks after the reading time and required fields are complete."}</p>
@@ -420,7 +409,6 @@ function Workspace({
   setChat,
   setScreen,
   testMode,
-  deepSeekModel,
   t,
 }: {
   locale: Locale;
@@ -433,7 +421,6 @@ function Workspace({
   setChat: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   setScreen: (screen: Screen) => void;
   testMode: boolean;
-  deepSeekModel: DeepSeekModel;
   t: typeof copy[Locale];
 }) {
   const task=getResearchTask(taskId);
@@ -505,7 +492,6 @@ function Workspace({
         body:JSON.stringify({
           locale,
           taskId,
-          model: deepSeekModel,
           messages:history.map(item=>({role:item.role,content:item.text})),
         }),
       });

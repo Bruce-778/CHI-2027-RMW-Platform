@@ -25,7 +25,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { createInitialCards, relations as demoRelations } from "@/lib/demo-data";
 import { eventLog } from "@/lib/event-log";
 import type { ResearchTaskId } from "@/lib/research-task";
 import type { EpistemicStatus, Locale, RelationType } from "@/lib/rmw-types";
@@ -61,31 +60,10 @@ interface CaptureRelation {
   confidence?: number;
 }
 
-function createCaptureCards(taskId: ResearchTaskId): CaptureCard[] {
-  return createInitialCards(taskId).map((card) => ({
-    id: card.id,
-    kind: card.cardType,
-    goalLevel: card.goalLevel,
-    content: card.content,
-    detail: card.detail,
-    status: card.status,
-    priority: card.priority,
-    confidence: card.confidence ?? 50,
-    source: {
-      "zh-CN": card.sourceRefs.map((source) => source.label).join("、") || "尚未识别明确来源",
-      en: card.sourceRefs.map((source) => source.label).join(", ") || "No specific source identified",
-    },
-    why: {
-      "zh-CN": "根据当前 memo、对话和材料引用生成的候选推理状态。",
-      en: "Candidate reasoning state extracted from the memo, chat, and material references.",
-    },
-  }));
-}
-
 const labels = {
   "zh-CN": {
     title: "保存窗口",
-    subtitle: "DeepSeek 正在根据你的 memo、对话与材料引用归纳候选 Problem State，并生成知识网络。",
+    subtitle: "进入保存窗口后，系统会尝试根据你实际写下的 memo 与对话提取候选 Problem State。",
     task: "主任务",
     save: "保存窗口",
     break: "中断任务",
@@ -102,7 +80,7 @@ const labels = {
     waiting: "保存按钮将在 1 分钟后开放",
     early: "请完成 1 分钟的查看时间，倒计时结束后才可进入中断任务。",
     guideTitle: "保存窗口说明",
-    guideDescription: "这里没有接受、编辑或置顶操作。你只需查看 DeepSeek 归纳出的状态与关系，系统会完整记录呈现版本。",
+    guideDescription: "只有 DeepSeek 成功分析你实际写下的内容后，才会显示 Problem State 与知识网络；系统会记录本次是否成功生成。",
     interruption: "中断任务",
     letterGame: "字母 2-back 游戏",
     letterHint: "判断当前字母是否与前两个字母相同。",
@@ -118,7 +96,7 @@ const labels = {
   },
   en: {
     title: "Save window",
-    subtitle: "DeepSeek is extracting candidate problem state from the memo, chat, and cited materials, then building a knowledge network.",
+    subtitle: "On entering the save window, the system attempts to extract candidate problem state from participant-authored memo and chat content.",
     task: "Primary task",
     save: "Save window",
     break: "Interruption",
@@ -135,7 +113,7 @@ const labels = {
     waiting: "Save opens after one minute",
     early: "Please use the full one-minute review period. The interruption opens when the countdown ends.",
     guideTitle: "Save-window guide",
-    guideDescription: "There are no accept, edit, or pin controls here. Review the DeepSeek-generated state and network; the shown version is logged.",
+    guideDescription: "Problem state and the network appear only after DeepSeek successfully analyzes participant-authored content. The generation outcome is logged.",
     interruption: "Interruption",
     letterGame: "Letter 2-back game",
     letterHint: "Decide whether the current letter matches the letter two positions back.",
@@ -263,8 +241,8 @@ function CheckpointGuide({ locale, open, onOpenChange }: { locale: Locale; open:
   const chinese=locale==="zh-CN";
   const items=[
     ["checkpoint-goals",Target,chinese?"目标结构":"Goal structure",chinese?"这里汇总主目标、活跃子目标、挂起目标和已排除路径。":"This area summarizes the main, active, suspended, and rejected paths."],
-    ["checkpoint-state",Brain,chinese?"候选 Problem State":"Candidate problem state",chinese?"这是 DeepSeek 根据 memo、对话和材料引用生成的候选状态，不代表系统读取了你的真实想法。":"DeepSeek derives this candidate state from the memo, chat, and citations."],
-    ["checkpoint-network",Graph,chinese?"知识网络":"Knowledge network",chinese?"这里展示目标、假设、约束、排除路径和下一步之间的关系。":"This shows relations among goals, hypotheses, constraints, rejected paths, and next actions."],
+    ["checkpoint-state",Brain,chinese?"候选 Problem State":"Candidate problem state",chinese?"仅当 DeepSeek 成功分析你实际写下的内容后，这里才会显示候选状态。":"Candidate state appears only after DeepSeek successfully analyzes participant-authored content."],
+    ["checkpoint-network",Graph,chinese?"知识网络":"Knowledge network",chinese?"仅展示本次成功提取出的卡片及其关系，不使用预置演示节点。":"Only cards and relations extracted in this run are shown; no preset demo nodes are used."],
   ];
   const [step,setStep]=useState(0);
   const [rect,setRect]=useState<DOMRect|null>(null);
@@ -310,7 +288,7 @@ export function RmwCheckpoint({
   memo,
   messages,
   testMode,
-  deepSeekModel,
+  onBack,
   onContinue,
 }: {
   locale: Locale;
@@ -318,13 +296,13 @@ export function RmwCheckpoint({
   memo: string;
   messages: Array<{ role: "user" | "assistant"; text: string }>;
   testMode: boolean;
-  deepSeekModel: "deepseek-v4-flash" | "deepseek-v4-pro";
+  onBack: () => void;
   onContinue: () => void;
 }) {
   const t = labels[locale];
-  const [cards, setCards] = useState(() => createCaptureCards(taskId));
-  const [relations, setRelations] = useState<CaptureRelation[]>(() => demoRelations);
-  const [mode, setMode] = useState<"loading" | "live" | "demo" | "error">("loading");
+  const [cards, setCards] = useState<CaptureCard[]>([]);
+  const [relations, setRelations] = useState<CaptureRelation[]>([]);
+  const [mode, setMode] = useState<"loading" | "live" | "insufficient" | "unavailable" | "error">("loading");
   const [guideOpen, setGuideOpen] = useState(true);
   const [earlyNotice, setEarlyNotice] = useState(false);
   const remaining = useCheckpointCountdown(testMode);
@@ -336,11 +314,11 @@ export function RmwCheckpoint({
         const response = await fetch("/api/extract", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ locale, taskId, memo, messages, model: deepSeekModel }),
+          body: JSON.stringify({ locale, taskId, memo, messages }),
           signal: controller.signal,
         });
         const result = await response.json() as {
-          mode?: "live" | "demo";
+          mode?: "live" | "insufficient" | "unavailable";
           cards?: ExtractedCard[];
           relations?: CaptureRelation[];
           error?: string;
@@ -365,8 +343,11 @@ export function RmwCheckpoint({
           }, { stage: "checkpoint" });
           return;
         }
-        setMode("demo");
-        eventLog("checkpoint_extraction_completed", { taskId, mode: "demo" }, { stage: "checkpoint" });
+        const skippedMode = result.mode === "insufficient" ? "insufficient" : "unavailable";
+        setCards([]);
+        setRelations([]);
+        setMode(skippedMode);
+        eventLog("checkpoint_extraction_skipped", { taskId, reason: skippedMode }, { stage: "checkpoint" });
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
         setMode("error");
@@ -375,12 +356,34 @@ export function RmwCheckpoint({
     };
     void extract();
     return () => controller.abort();
-  }, [deepSeekModel, locale, memo, messages, taskId]);
+  }, [locale, memo, messages, taskId]);
 
   const main = cards.find((card) => card.goalLevel === "main");
   const active = cards.filter((card) => card.goalLevel === "subgoal").slice(0, 4);
   const suspended = cards.filter((card) => card.goalLevel === "suspended").slice(0, 3);
   const rejected = cards.find((card) => card.kind === "path");
+  const extractionReady = mode === "live";
+  const modeLabel = mode === "live" ? "DeepSeek" : mode === "loading"
+    ? (locale === "zh-CN" ? "分析中" : "Analyzing")
+    : mode === "insufficient"
+      ? (locale === "zh-CN" ? "未生成" : "Not generated")
+      : mode === "unavailable"
+        ? (locale === "zh-CN" ? "DeepSeek 未配置" : "DeepSeek unavailable")
+        : (locale === "zh-CN" ? "分析失败" : "Analysis failed");
+  const emptyMessage = mode === "loading"
+    ? (locale === "zh-CN" ? "正在检查 memo 与对话，并请求 DeepSeek 提取……" : "Checking the memo and chat, then requesting DeepSeek extraction…")
+    : mode === "insufficient"
+      ? (locale === "zh-CN" ? "没有检测到参与者实际写入的 memo 或对话，因此未生成 Problem State。预填的问题和模板不算作参与者推理。" : "No participant-authored memo or chat was detected, so no problem state was generated. The prefilled question and template do not count as participant reasoning.")
+      : mode === "unavailable"
+        ? (locale === "zh-CN" ? "服务器未配置 DeepSeek API Key，因此本次没有生成 Problem State，也不会显示演示卡片。" : "The server has no DeepSeek API key, so no problem state was generated and no demo cards are shown.")
+        : (locale === "zh-CN" ? "DeepSeek 提取失败，本次没有生成 Problem State。" : "DeepSeek extraction failed, so no problem state was generated.");
+  const footerStatus = mode === "loading"
+    ? (locale === "zh-CN" ? "正在等待提取结果" : "Waiting for extraction")
+    : !extractionReady
+      ? (testMode ? (locale === "zh-CN" ? "测试模式可跳过；正式实验不可继续" : "Test mode may skip; the formal study cannot continue") : (locale === "zh-CN" ? "未生成 Problem State，无法进入中断任务" : "No problem state was generated; interruption is blocked"))
+      : testMode
+        ? (locale === "zh-CN" ? "测试模式：可直接继续" : "Test mode: continue anytime")
+        : remaining > 0 ? t.waiting : (locale === "zh-CN" ? "可以进入中断任务" : "Interruption task is ready");
 
   return <div className="min-h-screen bg-[#f7f6f2] px-6 py-5">
     <CheckpointGuide locale={locale} open={guideOpen} onOpenChange={setGuideOpen}/>
@@ -392,11 +395,12 @@ export function RmwCheckpoint({
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{t.subtitle}</p>
         </div>
         <div className="flex items-center gap-3">
-          <Badge variant={mode === "live" ? "default" : "secondary"}>{mode === "live" ? "DeepSeek" : mode === "loading" ? (locale === "zh-CN" ? "分析中" : "Analyzing") : (locale === "zh-CN" ? "演示数据" : "Demo data")}</Badge>
+          <Badge variant={mode === "live" ? "default" : "secondary"}>{modeLabel}</Badge>
           <button onClick={() => setGuideOpen(true)} aria-label={locale === "zh-CN" ? "查看说明" : "View guide"} className="grid size-9 place-items-center rounded-lg border bg-white hover:bg-muted"><Question size={18} /></button>
         </div>
       </header>
 
+      {mode === "live" ? <>
       <section className="grid grid-cols-[1fr_1.15fr] gap-5">
         <article data-tour="checkpoint-goals" className="rounded-2xl border bg-white p-5 shadow-[0_12px_40px_rgba(35,43,70,.05)]">
           <div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">{t.main}</h2><Badge variant="outline"><Target size={13} />1</Badge></div>
@@ -418,12 +422,25 @@ export function RmwCheckpoint({
         <div className="mb-3 flex items-center justify-between"><div><h2 className="flex items-center gap-2 font-semibold"><Graph size={20} className="text-primary" />{t.network}</h2><p className="mt-1 text-xs text-muted-foreground">{locale === "zh-CN" ? "节点与关系均来自本次 DeepSeek 提取结果。" : "Nodes and relations come from this DeepSeek extraction."}</p></div><Badge variant="outline">{relations.length} relations</Badge></div>
         <CheckpointNetwork cards={cards} relations={relations} locale={locale} />
       </section>
+      </> : <section className="rounded-2xl border bg-white px-8 py-16 text-center shadow-[0_12px_40px_rgba(35,43,70,.05)]">
+        <div className="mx-auto grid size-12 place-items-center rounded-xl bg-secondary text-primary">{mode === "loading" ? <Brain size={25} /> : <WarningCircle size={25} />}</div>
+        <h2 className="mt-5 text-lg font-semibold">{locale === "zh-CN" ? "没有可显示的 Problem State" : "No problem state to display"}</h2>
+        <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{emptyMessage}</p>
+        {mode !== "loading" && <Button variant="outline" className="mt-6" onClick={onBack}>{locale === "zh-CN" ? "返回工作区继续研究" : "Return to the workspace"}</Button>}
+      </section>}
 
       <div className="mt-5 flex items-center justify-between rounded-2xl border bg-white p-4">
-        <div className="flex items-center gap-3 text-sm"><Clock size={20} className="text-primary" /><div><p className="font-medium">{testMode ? (locale === "zh-CN" ? "测试模式：可直接继续" : "Test mode: continue anytime") : remaining > 0 ? t.waiting : (locale === "zh-CN" ? "可以进入中断任务" : "Interruption task is ready")}</p>{!testMode&&<p className="text-xs text-muted-foreground">{remaining > 0 ? formatClock(remaining) : "00:00"}</p>}</div></div>
+        <div className="flex items-center gap-3 text-sm"><Clock size={20} className="text-primary" /><div><p className="font-medium">{footerStatus}</p>{!testMode&&extractionReady&&<p className="text-xs text-muted-foreground">{remaining > 0 ? formatClock(remaining) : "00:00"}</p>}</div></div>
         <div className="text-right">
           {!testMode&&earlyNotice && remaining > 0 && <p role="status" className="mb-2 text-xs text-amber-700">{t.early}</p>}
-          <Button variant={testMode||remaining === 0 ? "default" : "secondary"} className="h-11 px-6" onClick={() => {
+          <Button variant={extractionReady&&(testMode||remaining === 0) ? "default" : "secondary"} disabled={mode === "loading" || (!testMode&&!extractionReady)} className="h-11 px-6" onClick={() => {
+            if (!extractionReady) {
+              if (testMode) {
+                eventLog("checkpoint_skipped_in_test_mode", { taskId, reason: mode }, { stage: "checkpoint" });
+                onContinue();
+              }
+              return;
+            }
             if (!testMode&&remaining > 0) {
               setEarlyNotice(true);
               eventLog("checkpoint_continue_blocked", { remaining }, { stage: "checkpoint" });
@@ -431,7 +448,7 @@ export function RmwCheckpoint({
             }
             eventLog("checkpoint_completed", { taskId, cards, relations }, { stage: "checkpoint" });
             onContinue();
-          }}>{t.saveAndBreak}<ArrowRight /></Button>
+          }}>{!extractionReady&&testMode?(locale === "zh-CN"?"仅测试模式：跳过保存":"Test mode only: skip save"):t.saveAndBreak}<ArrowRight /></Button>
         </div>
       </div>
     </div>

@@ -6,7 +6,6 @@ const bodySchema = z.object({
   messages: z.array(z.object({ role: z.enum(["user","assistant"]), content: z.string().min(1).max(8000) })).min(1).max(60),
   locale: z.enum(["zh-CN","en"]).default("zh-CN"),
   taskId: z.literal("waste").default("waste"),
-  model: z.enum(["deepseek-v4-flash","deepseek-v4-pro"]).optional(),
 });
 
 const completionSchema=z.object({
@@ -54,7 +53,7 @@ Evidence pack:
 ${evidencePack}`;
   const baseUrl = process.env.DEEPSEEK_BASE_URL || process.env.LLM_BASE_URL || "https://api.deepseek.com";
   const apiKey = process.env.DEEPSEEK_API_KEY || process.env.LLM_API_KEY;
-  const model = parsed.data.model || process.env.DEEPSEEK_MODEL || process.env.LLM_MODEL || "deepseek-v4-flash";
+  const model = process.env.DEEPSEEK_MODEL || process.env.LLM_MODEL || "deepseek-v4-flash";
   if (!apiKey) {
     return NextResponse.json({
       mode: "demo",

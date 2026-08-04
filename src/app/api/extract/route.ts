@@ -10,7 +10,6 @@ const requestSchema = z.object({
     role: z.enum(["user", "assistant"]),
     text: z.string().max(8000),
   })).max(60),
-  model: z.enum(["deepseek-v4-flash", "deepseek-v4-pro"]).optional(),
 });
 
 const cardSchema = z.object({
@@ -70,14 +69,19 @@ export async function POST(request: Request) {
 
   const { taskId, locale, memo, messages } = parsed.data;
   const task = getResearchTask(taskId);
+  const hasParticipantMemo = memo.trim() !== task.starterMemo[locale].trim();
+  const hasParticipantMessage = messages.some((message) => message.role === "user" && message.text.trim().length > 0);
+  if (!hasParticipantMemo && !hasParticipantMessage) {
+    return NextResponse.json({
+      mode: "insufficient",
+      message: "No participant-authored memo or chat content was available for extraction.",
+    });
+  }
   const apiKey = process.env.DEEPSEEK_API_KEY || process.env.LLM_API_KEY;
   if (!apiKey) {
     return NextResponse.json({
-      mode: "demo",
-      provider: "deepseek",
-      model: parsed.data.model || process.env.DEEPSEEK_MODEL || process.env.LLM_MODEL || "deepseek-v4-flash",
-      promptVersion: "rmw_state_and_network_extraction_v2",
-      message: "No server-side DeepSeek key; neutral calibration candidates remain in use.",
+      mode: "unavailable",
+      message: "No server-side DeepSeek key; no problem state was generated.",
     });
   }
 
@@ -116,7 +120,7 @@ Participant-visible evidence pack:
 ${evidencePack}`;
 
   const baseUrl = process.env.DEEPSEEK_BASE_URL || process.env.LLM_BASE_URL || "https://api.deepseek.com";
-  const model = parsed.data.model || process.env.DEEPSEEK_MODEL || process.env.LLM_MODEL || "deepseek-v4-flash";
+  const model = process.env.DEEPSEEK_MODEL || process.env.LLM_MODEL || "deepseek-v4-flash";
 
   try {
     const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {

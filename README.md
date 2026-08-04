@@ -37,7 +37,7 @@ DEEPSEEK_MODEL=deepseek-v4-flash
 
 Create `.env.local` in this directory, add the values above, and restart `pnpm dev`. Do not prefix the key with `NEXT_PUBLIC_`, paste it into a component, or commit `.env.local`.
 
-Participants can choose **DeepSeek V4 Flash** or **DeepSeek V4 Pro** on the entry screen. The server accepts only those two model identifiers; `DEEPSEEK_MODEL` is the fallback when no participant selection is supplied. Without `DEEPSEEK_API_KEY`, the tutor remains usable in scripted demo mode and the checkpoint uses neutral, low-confidence calibration candidates. It never inserts the researcher's answer key. In Vercel, add the same values under Project Settings → Environment Variables and redeploy.
+The participant does not choose the model. The server uses `DEEPSEEK_MODEL`, falling back to `deepseek-v4-flash`. Without `DEEPSEEK_API_KEY`, the tutor remains usable in scripted demo mode, but the checkpoint does not generate or display a Problem State. It never substitutes preset cards for a failed or unavailable extraction. In Vercel, add the same values under Project Settings → Environment Variables and redeploy.
 
 ## Experimental-task controls
 
@@ -49,7 +49,7 @@ Participants can choose **DeepSeek V4 Flash** or **DeepSeek V4 Pro** on the entr
 
 The demo now follows one closed-loop interruption protocol:
 
-1. Extract candidate problem state from chat, materials, memo, and interaction traces.
+1. On entering the save window, attempt to extract candidate problem state from participant-authored memo and chat content. The prefilled task template and assistant greeting do not count as participant reasoning.
 2. In the formal timed protocol, run Phase 1 for 10 minutes and open the save window only in its last three minutes. Test mode bypasses this gate.
 3. Present the extracted main goal, active and suspended subgoals, rejected path, concise candidate problem state, and a card-linked knowledge network. The save window intentionally has no `Accept`, `Edit`, or `Pin` controls.
 4. In the formal timed protocol, keep the save window visible for at least one minute before the participant can continue. Test mode bypasses this gate.
