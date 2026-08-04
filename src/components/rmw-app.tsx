@@ -30,7 +30,7 @@ type ChatMessage = { role: "user" | "assistant"; text: string };
 
 const copy = {
   "zh-CN": {
-    study: "大学生科研思考与恢复研究", consent: "我已阅读并同意参与研究",
+    study: "思考与恢复研究", consent: "我已阅读并同意参与研究",
     anonymous: "本次研究编号", enter: "开始研究", language: "界面语言",
     pretitle: "开始前，先了解你的经验", next: "继续", back: "返回",
     materials: "材料", chat: "AI 助手", memo: "工作区", recovery: "推理恢复支持",
