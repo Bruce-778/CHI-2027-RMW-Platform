@@ -451,12 +451,15 @@ function Workspace({
       if(next===0&&!timerExpiredLoggedRef.current){
         timerExpiredLoggedRef.current=true;
         eventLog("workspace_timer_expired",{taskId,phase,durationSeconds:600},{stage:"research_work"});
+        const nextScreen: Screen=phase==="work"?"checkpoint":"complete";
+        eventLog("workspace_auto_advanced",{taskId,phase,nextScreen},{stage:phase==="work"?"research_work":"recovery"});
+        setScreen(nextScreen);
       }
     };
     updateTimer();
     const timer=window.setInterval(updateTimer,250);
     return()=>window.clearInterval(timer);
-  },[phase,taskId]);
+  },[phase,setScreen,taskId]);
 
   const resizeColumns=(divider:"left"|"right",clientX:number)=>{
     const bounds=workspaceGridRef.current?.getBoundingClientRect();
