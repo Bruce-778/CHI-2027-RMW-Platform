@@ -69,9 +69,11 @@ ${evidencePack}`;
     const response = await fetch(`${baseUrl.replace(/\/$/,"")}/chat/completions`, {
       method: "POST",
       headers: { "content-type":"application/json", authorization:`Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(45_000),
       body: JSON.stringify({
         model,
         messages:[{role:"system",content:systemPrompt},...parsed.data.messages],
+        thinking: { type: "disabled" },
         temperature: .3,
         max_tokens: 900,
       }),
@@ -82,7 +84,8 @@ ${evidencePack}`;
       return NextResponse.json({error:"Invalid DeepSeek response"},{status:502});
     }
     return NextResponse.json({ mode:"live", provider:"deepseek", model, promptVersion:"single_waste_task_v2_structured_concise", content:completion.data.choices[0].message.content });
-  }catch{
-    return NextResponse.json({error:"DeepSeek request failed"},{status:502});
+  }catch(error){
+    const timedOut=error instanceof DOMException&&error.name==="TimeoutError";
+    return NextResponse.json({error:timedOut?"DeepSeek request timed out":"DeepSeek request failed"},{status:502});
   }
 }

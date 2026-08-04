@@ -126,12 +126,14 @@ ${evidencePack}`;
     const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(45_000),
       body: JSON.stringify({
         model,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
+        thinking: { type: "disabled" },
         temperature: 0,
         max_tokens: 2200,
       }),

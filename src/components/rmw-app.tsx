@@ -431,6 +431,7 @@ function Workspace({
   const [selected,setSelected]=useState("uncertain");
   const [message,setMessage]=useState("");
   const [isLoading,setIsLoading]=useState(false);
+  const [chatError,setChatError]=useState<string|null>(null);
   const [showTour,setShowTour]=useState(phase==="work");
   const [rightTopRatio,setRightTopRatio]=useState(48);
   const rightColumnRef=useRef<HTMLElement|null>(null);
@@ -490,6 +491,7 @@ function Workspace({
     setChat(history);
     setMessage("");
     setIsLoading(true);
+    setChatError(null);
     eventLog("chat_message_sent",{taskId,phase},{stage:"research_work"});
     try{
       const response=await fetch("/api/chat",{
@@ -505,9 +507,11 @@ function Workspace({
       if(!response.ok||!result.content)throw new Error(result.error||"No model response");
       setChat(current=>[...current,{role:"assistant",text:result.content!}]);
       eventLog("chat_response_received",{taskId,providerMode:result.mode||"unknown"},{stage:"research_work"});
-    }catch{
-      setChat(current=>[...current,{role:"assistant",text:locale==="zh-CN"?"暂时无法连接 AI。你的材料阅读和 memo 已保留；请稍后重试，并继续把证据与推断分开记录。":"The AI is temporarily unavailable. Your materials and memo are preserved; retry later and continue separating evidence from inference."}]);
-      eventLog("chat_response_failed",{taskId},{stage:"research_work"});
+    }catch(error){
+      setChat(chat);
+      setMessage(userText);
+      setChatError(locale==="zh-CN"?"AI 本次响应失败，消息已放回输入框，请重试。":"The AI response failed. Your message was restored; please retry.");
+      eventLog("chat_response_failed",{taskId,reason:error instanceof Error?error.message:"unknown"},{stage:"research_work"});
     }finally{
       setIsLoading(false);
     }
@@ -569,7 +573,7 @@ function Workspace({
         >
           <span className="h-1 w-12 rounded-full bg-border transition group-hover:bg-primary/45"/>
         </button>
-        <ChatPanel locale={locale} chat={chat} message={message} setMessage={setMessage} send={send} isLoading={isLoading} t={t}/>
+        <ChatPanel locale={locale} chat={chat} message={message} setMessage={setMessage} send={send} isLoading={isLoading} error={chatError} t={t}/>
       </section>
     </div>
     {showTour&&<WorkspaceTour locale={locale} onComplete={()=>setShowTour(false)}/>}
@@ -593,7 +597,7 @@ function MaterialsPanel({locale,taskId,t}:{locale:Locale;taskId:ResearchTaskId;t
   </aside>;
 }
 
-function ChatPanel({locale,chat,message,setMessage,send,isLoading,t}:{locale:Locale;chat:ChatMessage[];message:string;setMessage:(s:string)=>void;send:()=>void;isLoading:boolean;t:typeof copy[Locale]}) {
+function ChatPanel({locale,chat,message,setMessage,send,isLoading,error,t}:{locale:Locale;chat:ChatMessage[];message:string;setMessage:(s:string)=>void;send:()=>void;isLoading:boolean;error:string|null;t:typeof copy[Locale]}) {
   return <section data-tour="chat" className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
     <div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><Sparkle size={19} className="text-primary" weight="fill"/>{t.chat}</h2><Badge variant="outline" className="text-[10px]">DeepSeek</Badge></div>
     <div className="panel-scroll min-h-0 flex-1 overflow-y-auto px-5 py-5">
@@ -601,7 +605,7 @@ function ChatPanel({locale,chat,message,setMessage,send,isLoading,t}:{locale:Loc
       {chat.map((item,index)=><div key={`${item.role}-${index}`} className={`mb-4 flex ${item.role==="user"?"justify-end":"justify-start"}`}><div className={`max-w-[88%] whitespace-pre-wrap rounded-xl px-4 py-3 text-sm leading-6 ${item.role==="user"?"bg-secondary text-secondary-foreground":"bg-[#f5f6f8]"}`}>{item.text}</div></div>)}
       {isLoading&&<div className="mb-4 flex justify-start"><div className="rounded-xl bg-[#f5f6f8] px-4 py-3 text-xs text-muted-foreground"><Sparkle size={14} className="mr-2 inline animate-pulse text-primary"/>{locale==="zh-CN"?"DeepSeek 正在对照材料…":"DeepSeek is comparing the evidence…"}</div></div>}
     </div>
-    <div className="shrink-0 p-3 pt-0"><div className="flex items-end gap-2 rounded-xl border bg-white px-3 py-2 shadow-[0_8px_30px_rgba(35,43,70,.06)]"><Textarea value={message} disabled={isLoading} onChange={event=>setMessage(event.target.value)} onKeyDown={event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();send()}}} rows={1} className="min-h-9 max-h-16 resize-none overflow-y-auto border-0 bg-transparent px-0 py-2 shadow-none focus-visible:ring-0" placeholder={t.ask}/><Button size="icon" className="mb-0.5" onClick={send} disabled={isLoading||!message.trim()} aria-label="Send"><PaperPlaneTilt size={18} weight="fill"/></Button></div><p className="mt-1.5 text-center text-[9px] leading-4 text-muted-foreground">{t.disclaimer}</p></div>
+    <div className="shrink-0 p-3 pt-0">{error&&<p role="alert" className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-800">{error}</p>}<div className="flex items-end gap-2 rounded-xl border bg-white px-3 py-2 shadow-[0_8px_30px_rgba(35,43,70,.06)]"><Textarea value={message} disabled={isLoading} onChange={event=>setMessage(event.target.value)} onKeyDown={event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();send()}}} rows={1} className="min-h-9 max-h-16 resize-none overflow-y-auto border-0 bg-transparent px-0 py-2 shadow-none focus-visible:ring-0" placeholder={t.ask}/><Button size="icon" className="mb-0.5" onClick={send} disabled={isLoading||!message.trim()} aria-label="Send"><PaperPlaneTilt size={18} weight="fill"/></Button></div><p className="mt-1.5 text-center text-[9px] leading-4 text-muted-foreground">{t.disclaimer}</p></div>
   </section>;
 }
 
