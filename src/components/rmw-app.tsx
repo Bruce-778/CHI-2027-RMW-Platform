@@ -39,10 +39,17 @@ const copy = {
     memoPlaceholder: "继续写下你的研究问题、发现与实验计划…", words: "字",
     resume: "恢复摘要", cards: "推理卡片", network: "知识网络", relations: "关系列表",
     currentGoal: "当前目标", position: "推理位置", uncertain: "仍未验证", ruled: "已排除", nextStep: "最小下一步",
-    continue: "继续研究", evidence: "查看证据", pin: "置顶", verify: "已核查", expire: "过期", restore: "恢复",
+    currentGoalHint: "接下来要完成的目标",
+    positionHint: "前面做到了哪里，后面应该怎么去做",
+    uncertainHint: "还没有做 / 尚未核实的事情",
+    continue: "继续研究", endStudy: "结束研究", evidence: "查看证据", pin: "置顶", verify: "已核查", expire: "过期", restore: "恢复",
     allCards: "全部卡片", ready: "从这里继续", readFirst: "先花一分钟看恢复摘要，再检查存疑内容。",
-    recallTitle: "在查看恢复支持前，请先回忆", recallSub: "请根据记忆回答。提交后才会显示昨天的恢复材料。",
+    recallTitle: "无辅助回忆批注", recallSub: "请仅凭记忆填写。提交后才会显示恢复支持材料。",
     submitRecall: "提交并查看恢复支持", completed: "任务已完成", completeText: "感谢参与。你的回答已安全保存。",
+    recoveryAcceptTitle: "恢复阶段 · 接受推理位置",
+    recoveryAcceptSub: "请先确认恢复支持给出的关键点。可编辑后接受，再进入卡片与网络校准。",
+    recoveryAcceptAction: "接受并继续",
+    recoveryAcceptBlocked: "请完成三栏确认",
     desktop: "请使用桌面设备", desktopText: "为了保证实验条件一致，本研究需要至少 1100px 宽的桌面浏览器。",
   },
   en: {
@@ -55,10 +62,17 @@ const copy = {
     memoPlaceholder: "Continue your research problem, findings, and study plan…", words: "words",
     resume: "Resume brief", cards: "Reasoning cards", network: "Knowledge network", relations: "Relation list",
     currentGoal: "Current goal", position: "Reasoning position", uncertain: "Still uncertain", ruled: "Ruled out", nextStep: "Next step",
-    continue: "Continue research", evidence: "View evidence", pin: "Pin", verify: "Verified", expire: "Expire", restore: "Restore",
+    currentGoalHint: "The goal you still need to finish next",
+    positionHint: "Where you left off, and what you should do next",
+    uncertainHint: "What you have not yet done or verified",
+    continue: "Continue research", endStudy: "End study", evidence: "View evidence", pin: "Pin", verify: "Verified", expire: "Expire", restore: "Restore",
     allCards: "All cards", ready: "Resume from here", readFirst: "Review the brief first, then inspect the uncertain claim.",
-    recallTitle: "Before viewing recovery support, recall your earlier work", recallSub: "Answer from memory. Your recovery material appears only after submission.",
+    recallTitle: "Unsupported recall notes", recallSub: "Answer from memory only. Recovery support appears after you submit.",
     submitRecall: "Submit and reveal support", completed: "Study complete", completeText: "Thank you. Your responses have been saved securely.",
+    recoveryAcceptTitle: "Recovery · Accept reasoning position",
+    recoveryAcceptSub: "Confirm the recovery-critical points first. Edit if needed, accept, then calibrate cards and the network.",
+    recoveryAcceptAction: "Accept and continue",
+    recoveryAcceptBlocked: "Complete all three fields",
     desktop: "Desktop device required", desktopText: "To keep experimental conditions consistent, use a desktop browser at least 1100px wide.",
   },
 };
@@ -158,7 +172,7 @@ function Landing({
 
 function TaskBrief({locale,taskId,setScreen}:{locale:Locale;taskId:ResearchTaskId;setScreen:(screen:Screen)=>void}) {
   const task=getResearchTask(taskId);
-  return <CenteredShell step="Task setup · 1 / 2" title={locale==="zh-CN"?"研究任务说明":"Research task brief"}>
+  return <CenteredShell title={locale==="zh-CN"?"研究任务说明":"Research task brief"}>
     <Badge variant="secondary" className="rounded-full text-primary">{task.label[locale]}</Badge>
     <p className="mt-5 text-lg font-semibold leading-8">{task.question[locale]}</p>
     <p className="mt-4 rounded-xl bg-secondary/55 p-4 text-sm leading-7 text-secondary-foreground">{taskOverview[locale]}</p>
@@ -315,7 +329,7 @@ function Survey({ locale, taskId, setScreen, t }: { locale:Locale;taskId:Researc
   const flatItems=groups.flatMap(group=>group.items.map(item=>({id:item.id,groupId:group.id,item})));
   const [responses,setResponses]=useState<Record<string,number>>({});
   const complete=flatItems.every(item=>responses[item.id]);
-  return <CenteredShell step="Task setup · 2 / 2" title={t.pretitle}>
+  return <CenteredShell title={t.pretitle}>
     <p className="mb-7 text-sm leading-6 text-muted-foreground">{locale==="zh-CN"?"本页包含 3 个测量目标，共 26 个评价点。请根据真实情况作答；所有题目均使用可点击的 5 点选项。":"This page contains three measurement goals and 26 items. Answer based on your actual situation using the clickable five-point options."}</p>
     <div className="space-y-8">
       {groups.map(group=><section key={group.id} className="rounded-xl border bg-[#fcfcfd] p-5">
@@ -344,15 +358,134 @@ function Survey({ locale, taskId, setScreen, t }: { locale:Locale;taskId:Researc
   </CenteredShell>;
 }
 
-function CenteredShell({step,title,children}:{step:string;title:string;children:React.ReactNode}) { return <div className="min-h-screen bg-[#f7f6f2]"><header className="mx-auto flex h-20 max-w-5xl items-center justify-between px-8"><Brand/><span className="font-mono text-xs text-muted-foreground">{step}</span></header><section className="mx-auto max-w-2xl px-8 py-16"><h1 className="mb-10 text-3xl font-semibold tracking-tight">{title}</h1><div className="rounded-2xl border bg-white p-8 shadow-[0_18px_60px_rgba(35,40,65,.07)]">{children}</div></section></div> }
+function CenteredShell({step,title,children}:{step?:string;title:string;children:React.ReactNode}) { return <div className="min-h-screen bg-[#f7f6f2]"><header className="mx-auto flex h-20 max-w-5xl items-center justify-between px-8"><Brand/>{step?<span className="font-mono text-xs text-muted-foreground">{step}</span>:null}</header><section className="mx-auto max-w-2xl px-8 py-16"><h1 className="mb-10 text-3xl font-semibold tracking-tight">{title}</h1><div className="rounded-2xl border bg-white p-8 shadow-[0_18px_60px_rgba(35,40,65,.07)]">{children}</div></section></div> }
 
 function Brand(){return <div className="flex items-center gap-3"><div className="grid size-10 place-items-center rounded-xl bg-primary text-white"><Brain size={23} weight="duotone"/></div><div><div className="font-semibold tracking-tight">RMW</div><div className="text-[10px] uppercase tracking-[.16em] text-muted-foreground">Reasoning Memory</div></div></div>}
 
 function Recall({ locale,setScreen,t }: {locale:Locale;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
-  const prompts=[t.currentGoal,t.position,t.uncertain];
-  const [responses,setResponses]=useState<string[]>(prompts.map(()=>""));
+  const fields=[
+    { label:t.currentGoal, hint:t.currentGoalHint, key:"currentGoal" },
+    { label:t.position, hint:t.positionHint, key:"position" },
+    { label:t.uncertain, hint:t.uncertainHint, key:"uncertain" },
+  ] as const;
+  const [responses,setResponses]=useState<string[]>(fields.map(()=>""));
   const complete=responses.every(response=>response.trim());
-  return <CenteredShell step={locale==="zh-CN"?"无辅助回忆 · 01:30":"Unsupported recall · 01:30"} title={t.recallTitle}><p className="mb-7 text-sm leading-6 text-muted-foreground">{t.recallSub}</p><div className="space-y-4">{prompts.map((p,i)=><label key={p} className="block"><span className="mb-2 block text-sm font-medium">{i+1}. {p}</span><Textarea rows={2} placeholder="…" value={responses[i]} onChange={event=>setResponses(current=>current.map((value,index)=>index===i?event.target.value:value))}/></label>)}</div><TimedButton seconds={5} ready={complete} locale={locale} label={t.submitRecall} blockedLabel={locale==="zh-CN"?"请完成全部回忆题":"Answer every recall prompt"} className="mt-8 h-12 w-full" onClick={()=>{eventLog("unsupported_recall_submitted",{answeredCount:responses.filter(Boolean).length,responseLengths:responses.map(value=>value.length)},{stage:"unsupported_recall"});eventLog("recovery_support_revealed",{}, {stage:"recovery"});setScreen("workspace")}} /></CenteredShell>
+  return <div className="min-h-screen bg-[#f7f6f2]">
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/45 p-6 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-labelledby="recall-annotation-title">
+    <div className="w-full max-w-xl rounded-2xl border bg-white p-7 shadow-[0_28px_90px_rgba(10,18,44,.28)]">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[.16em] text-muted-foreground">{locale==="zh-CN"?"无辅助回忆 · 01:30":"Unsupported recall · 01:30"}</p>
+          <h1 id="recall-annotation-title" className="mt-2 text-2xl font-semibold tracking-tight">{t.recallTitle}</h1>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">{t.recallSub}</p>
+        </div>
+        <Brand />
+      </div>
+      <div className="mt-6 space-y-4">
+        {fields.map((field,i)=>(
+          <label key={field.key} className="block">
+            <span className="mb-1 block text-sm font-medium">{i+1}. {field.label}</span>
+            <span className="mb-2 block text-xs leading-5 text-muted-foreground">{field.hint}</span>
+            <Textarea
+              rows={2}
+              placeholder="…"
+              value={responses[i]}
+              onChange={event=>setResponses(current=>current.map((value,index)=>index===i?event.target.value:value))}
+            />
+          </label>
+        ))}
+      </div>
+      <TimedButton
+        seconds={5}
+        ready={complete}
+        locale={locale}
+        label={t.submitRecall}
+        blockedLabel={locale==="zh-CN"?"请完成全部回忆题":"Answer every recall prompt"}
+        className="mt-7 h-12 w-full"
+        onClick={()=>{
+          eventLog("unsupported_recall_submitted",{
+            answeredCount:responses.filter(value=>value.trim()).length,
+            responseLengths:responses.map(value=>value.length),
+            responses:{
+              currentGoal:responses[0],
+              position:responses[1],
+              uncertain:responses[2],
+            },
+          },{stage:"unsupported_recall"});
+          eventLog("recovery_support_revealed",{}, {stage:"recovery"});
+          setScreen("workspace");
+        }}
+      />
+    </div>
+    </div>
+  </div>;
+}
+
+function RecoveryAcceptFloat({
+  locale,
+  cards,
+  t,
+  onAccept,
+}: {
+  locale: Locale;
+  cards: ReasoningCard[];
+  t: typeof copy[Locale];
+  onAccept: (values: { currentGoal: string; position: string; uncertain: string }) => void;
+}) {
+  const main = cards.find((card) => card.goalLevel === "main");
+  const positionSeed = cards
+    .filter((card) => card.goalLevel === "subgoal" && card.status !== "expired")
+    .slice(0, 2)
+    .map((card) => card.content[locale])
+    .join(locale === "zh-CN" ? "；" : "; ");
+  const uncertain = cards.find((card) => card.status === "uncertain")
+    || cards.find((card) => card.id === "uncertain");
+  const fields = [
+    { key: "currentGoal", label: t.currentGoal, hint: t.currentGoalHint, seed: main?.content[locale] || "" },
+    { key: "position", label: t.position, hint: t.positionHint, seed: positionSeed },
+    { key: "uncertain", label: t.uncertain, hint: t.uncertainHint, seed: uncertain?.content[locale] || "" },
+  ] as const;
+  const [responses, setResponses] = useState(() => fields.map((field) => field.seed));
+  const complete = responses.every((response) => response.trim());
+  return <div className="fixed inset-0 z-[60] grid place-items-center bg-slate-950/45 p-6 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-labelledby="recovery-accept-title">
+    <div className="w-full max-w-xl rounded-2xl border bg-white p-7 shadow-[0_28px_90px_rgba(10,18,44,.28)]">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[.16em] text-muted-foreground">{locale === "zh-CN" ? "恢复阶段 · 接受" : "Recovery · Accept"}</p>
+          <h1 id="recovery-accept-title" className="mt-2 text-2xl font-semibold tracking-tight">{t.recoveryAcceptTitle}</h1>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">{t.recoveryAcceptSub}</p>
+        </div>
+        <Brand />
+      </div>
+      <div className="mt-6 space-y-4">
+        {fields.map((field, index) => (
+          <label key={field.key} className="block">
+            <span className="mb-1 block text-sm font-medium">{index + 1}. {field.label}</span>
+            <span className="mb-2 block text-xs leading-5 text-muted-foreground">{field.hint}</span>
+            <Textarea
+              rows={2}
+              placeholder="…"
+              value={responses[index]}
+              onChange={(event) => setResponses((current) => current.map((value, i) => i === index ? event.target.value : value))}
+            />
+          </label>
+        ))}
+      </div>
+      <TimedButton
+        seconds={5}
+        ready={complete}
+        locale={locale}
+        label={t.recoveryAcceptAction}
+        blockedLabel={t.recoveryAcceptBlocked}
+        className="mt-7 h-12 w-full"
+        onClick={() => onAccept({
+          currentGoal: responses[0].trim(),
+          position: responses[1].trim(),
+          uncertain: responses[2].trim(),
+        })}
+      />
+    </div>
+  </div>;
 }
 
 function WorkspaceTour({locale,onComplete}:{locale:Locale;onComplete:()=>void}) {
@@ -433,6 +566,7 @@ function Workspace({
   const [isLoading,setIsLoading]=useState(false);
   const [chatError,setChatError]=useState<string|null>(null);
   const [showTour,setShowTour]=useState(phase==="work");
+  const [showRecoveryAccept,setShowRecoveryAccept]=useState(phase==="recovery"&&condition==="rmw");
   const [rightTopRatio,setRightTopRatio]=useState(48);
   const rightColumnRef=useRef<HTMLElement|null>(null);
   const workspaceGridRef=useRef<HTMLDivElement|null>(null);
@@ -484,6 +618,29 @@ function Workspace({
   const updateStatus=(id:string,status:EpistemicStatus)=>{setCards(cs=>cs.map(c=>c.id===id?{...c,status,revision:c.revision+1}:c));eventLog("card_status_changed",{status},{stage:"recovery",targetType:"reasoning_card",targetId:id})};
   const togglePin=(id:string)=>{setCards(cs=>cs.map(c=>c.id===id?{...c,priority:c.priority==="pinned"?"normal":"pinned",revision:c.revision+1}:c));eventLog("card_pin_toggled",{id},{stage:"recovery",targetType:"reasoning_card",targetId:id})};
   const updateContent=(id:string,value:string)=>{setCards(cs=>cs.map(c=>c.id===id?{...c,content:{...c.content,[locale]:value},revision:c.revision+1}:c));eventLog("card_content_edited",{locale},{stage:"recovery",targetType:"reasoning_card",targetId:id})};
+  const acceptRecoveryFloat=(values:{currentGoal:string;position:string;uncertain:string})=>{
+    const main=cards.find(card=>card.goalLevel==="main");
+    const uncertainCard=cards.find(card=>card.status==="uncertain")||cards.find(card=>card.id==="uncertain");
+    setCards(current=>current.map(card=>{
+      if(main&&card.id===main.id){
+        return {...card,content:{...card.content,[locale]:values.currentGoal},status:"active",priority:"pinned",revision:card.revision+1};
+      }
+      if(uncertainCard&&card.id===uncertainCard.id){
+        return {...card,content:{...card.content,[locale]:values.uncertain},status:"uncertain",revision:card.revision+1};
+      }
+      return card;
+    }));
+    eventLog("recovery_accept_float_submitted",{
+      locale,
+      responses:values,
+      writtenBack:{
+        mainGoalId:main?.id||null,
+        uncertainCardId:uncertainCard?.id||null,
+        positionLoggedOnly:true,
+      },
+    },{stage:"recovery"});
+    setShowRecoveryAccept(false);
+  };
   const send=async()=>{
     const userText=message.trim();
     if(!userText||isLoading)return;
@@ -577,6 +734,7 @@ function Workspace({
       </section>
     </div>
     {showTour&&<WorkspaceTour locale={locale} onComplete={()=>setShowTour(false)}/>}
+    {showRecoveryAccept&&<RecoveryAcceptFloat locale={locale} cards={cards} t={t} onAccept={acceptRecoveryFloat}/>}
   </div>
 }
 
@@ -724,6 +882,6 @@ const flowPositions:Record<string,{x:number;y:number}>={
 };
 function KnowledgeNetwork({locale,cards,selected,setSelected,compact=false}:{locale:Locale;cards:ReasoningCard[];selected:string;setSelected:(s:string)=>void;compact?:boolean}) { const nodes=useMemo<Node<FlowData>[]>(()=>cards.map(c=>({id:c.id,type:"reason",position:flowPositions[c.id]||{x:0,y:0},data:{label:c.content[locale],status:c.status,selected:c.id===selected}})),[cards,locale,selected]); const edges=useMemo<Edge[]>(()=>relations.map(r=>({id:r.id,source:r.sourceCardId,target:r.targetCardId,label:compact?undefined:r.relationType,animated:r.relationType==="leads_to",style:{stroke:r.relationType==="challenges"?"#c58a2c":"#8a93a5"},labelStyle:{fontSize:9,fill:"#6b7280"}})),[compact]); return <div className="h-full min-h-0 bg-[#fcfcfd]"><ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView minZoom={.45} maxZoom={1.4} onNodeClick={(_,n)=>{setSelected(n.id);eventLog("network_node_clicked",{id:n.id})}}><Background gap={22} size={1} color="#e8eaf0"/>{!compact&&<Controls position="bottom-right" showInteractive={false}/>}</ReactFlow></div> }
 
-function PrimaryContinue({locale,setScreen,t}:{locale:Locale;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) { return <div className="shrink-0 border-t bg-white px-5 py-3"><TimedButton seconds={5} locale={locale} label={t.continue} className="h-11 w-full text-sm" onClick={()=>{eventLog("continue_research_clicked");setScreen("complete")}} /></div> }
+function PrimaryContinue({locale,setScreen,t}:{locale:Locale;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) { return <div className="shrink-0 border-t bg-white px-5 py-3"><TimedButton seconds={5} locale={locale} label={t.endStudy} className="h-11 w-full text-sm" onClick={()=>{eventLog("end_study_clicked",{},{stage:"recovery"});setScreen("complete")}} /></div> }
 
 function Complete({setScreen,t}:{setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) { return <div className="grid min-h-screen place-items-center bg-[#f7f6f2] p-8"><div className="max-w-lg text-center"><div className="mx-auto grid size-16 place-items-center rounded-2xl bg-[var(--active-soft)] text-[var(--active)]"><CheckCircle size={36} weight="fill"/></div><h1 className="mt-6 text-3xl font-semibold">{t.completed}</h1><p className="mt-3 text-muted-foreground">{t.completeText}</p><Button variant="outline" className="mt-8" onClick={()=>setScreen("landing")}>{t.back}</Button></div></div> }

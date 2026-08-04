@@ -51,7 +51,7 @@ The demo now follows one closed-loop interruption protocol:
 
 1. On entering the save window, attempt to extract candidate problem state from participant-authored memo and chat content. The prefilled task template and assistant greeting do not count as participant reasoning.
 2. In the formal timed protocol, run Phase 1 for 10 minutes and open the save window only in its last three minutes. Test mode bypasses this gate.
-3. Present the extracted main goal, active and suspended subgoals, rejected path, concise candidate problem state, and a card-linked knowledge network. The save window intentionally has no `Accept`, `Edit`, or `Pin` controls.
+3. Present the extracted main goal, active and suspended subgoals, rejected path, concise candidate problem state, and a card-linked knowledge network. Participants can select cards and calibrate them with `Accept`, `Edit`, `Pin`, `Uncertain`, and `Expire`.
 4. In the formal timed protocol, keep the save window visible for at least one minute before the participant can continue. Test mode bypasses this gate.
 5. Run both a letter 2-back task and a color-recognition task. Each task requires a perfect score; otherwise it restarts.
 6. Collect three unsupported-recall responses before revealing recovery support.
