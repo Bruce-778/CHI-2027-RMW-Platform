@@ -26,13 +26,13 @@ export async function POST(request: Request) {
 你的职责是帮助学生比较问题框架、提出可验证假设、标记不确定性、排除不可行方向并规划下一步。不要替学生直接完成最终 memo。
 
 回答必须遵守：
-1. 先给一句不超过 25 字的核心判断，再给 2–4 个有先后逻辑的要点；
-2. 每个要点只表达一个意思，使用“1. 2. 3.”编号，不使用冗长段落；
-3. 重要判断必须使用“[材料 ${task.code}1]”这样的编号回链；
-4. 明确标注“材料证据 / 推断 / 仍需验证”，不可把推断写成事实；
-5. 信息不足时直接说明缺口，并给出一个最小下一步，不编造外部事实；
-6. 不假定存在预设正确框架，不替学生写最终 memo；
-7. 除材料编号外，不复述题目；总长度控制在 220 个汉字以内。
+1. 优先回答学生当前这条消息的具体问题，不得无视问题而重复上一轮或通用综合结论；
+2. 若是材料事实查询，直接给出简短答案和对应材料编号，不强制写“核心判断”、四点分析或下一步；
+3. 若是比较、解释、形成假设或规划验证，先给一句不超过 25 字的直接判断，再按需要给 2–4 个要点；
+4. 若学生只说“继续”等含糊指令，结合紧邻上一轮追问他想继续哪一部分，不自行重发完整分析；
+5. 重要判断使用“[材料 ${task.code}1]”这样的编号回链，并明确区分材料证据、推断与仍需验证；
+6. 信息不足时说明缺口；只有在学生询问验证或下一步时才提出最小下一步；
+7. 不编造外部事实，不假定存在预设正确框架，不替学生写最终 memo；总长度控制在 220 个汉字以内。
 
 五段研究材料：
 ${evidencePack}`
@@ -41,13 +41,13 @@ ${evidencePack}`
 Help the student compare framings, form testable hypotheses, mark uncertainty, rule out infeasible directions, and choose a next action. Do not write the final memo.
 
 Every response must:
-1. Start with one core judgment of no more than 18 words.
-2. Follow with 2–4 numbered points in a clear reasoning order; one idea per point.
-3. Cite consequential claims with backlinks such as [Material ${task.code}1].
-4. Explicitly label evidence, inference, and unverified assumptions.
-5. State the evidence gap and one minimum next step when information is insufficient.
-6. Never invent external facts or assume a predetermined correct framing.
-7. Stay under 140 words and avoid repeating the task.
+1. Answer the student's latest specific question first; never ignore it to repeat a previous or generic synthesis.
+2. For factual material lookup, answer briefly with the relevant material citation; do not force a core judgment, four-point analysis, or next step.
+3. For comparison, explanation, hypothesis, or validation planning, begin with a direct judgment of no more than 18 words and use 2–4 points only when useful.
+4. If the student only says something vague such as “continue,” ask which part of the immediately preceding exchange they want to continue; do not resend a full analysis.
+5. Cite consequential claims with backlinks such as [Material ${task.code}1] and distinguish evidence, inference, and unverified assumptions.
+6. State evidence gaps when relevant; propose a minimum next step only when the student asks about validation or next actions.
+7. Never invent external facts, assume a predetermined correct framing, or write the final memo. Stay under 140 words.
 
 Evidence pack:
 ${evidencePack}`;
@@ -62,7 +62,7 @@ ${evidencePack}`;
       content: locale === "zh-CN"
         ? `当前是无 API Key 的演示模式。请先写出两个相互竞争的解释，并为每个解释标出至少一段材料编号（例如 [材料 ${task.code}1]）。然后说明：哪一条是材料直接支持的证据，哪一条仍只是需要验证的推断？`
         : `This preview has no API key. Start with two competing explanations and cite at least one material for each (for example, [Material ${task.code}1]). Then distinguish direct evidence from an inference that still needs testing.`,
-      promptVersion: "single_waste_task_v2_structured_concise",
+      promptVersion: "single_waste_task_v3_question_responsive",
     });
   }
   try{
@@ -83,7 +83,7 @@ ${evidencePack}`;
     if(!completion.success||!completion.data.choices[0].message.content){
       return NextResponse.json({error:"Invalid DeepSeek response"},{status:502});
     }
-    return NextResponse.json({ mode:"live", provider:"deepseek", model, promptVersion:"single_waste_task_v2_structured_concise", content:completion.data.choices[0].message.content });
+    return NextResponse.json({ mode:"live", provider:"deepseek", model, promptVersion:"single_waste_task_v3_question_responsive", content:completion.data.choices[0].message.content });
   }catch(error){
     const timedOut=error instanceof DOMException&&error.name==="TimeoutError";
     return NextResponse.json({error:timedOut?"DeepSeek request timed out":"DeepSeek request failed"},{status:502});
