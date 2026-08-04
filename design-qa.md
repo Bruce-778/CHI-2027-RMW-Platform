@@ -10,7 +10,7 @@
 - Implementation viewport and pixels: 1440 × 900 CSS px at device scale 1.
 - Full-view comparison: `artifacts/design-qa/recovery-tabs-comparison-v3.png`
 - Focused evidence: the same comparison clearly shows the chat composer and recovery-tab regions; separate crops were unnecessary because both regions remain legible at the normalized size.
-- States checked: Chinese Phase 1, Chinese Day 2 Resume Brief / Reasoning Cards / Knowledge Network, guided-tour steps, entry model selection, test mode, and formal timed mode.
+- States checked: Chinese Phase 1, Chinese recovery Resume Brief / Reasoning Cards / Knowledge Network, guided-tour steps, automatic session ID, test mode, and formal timed mode.
 
 ## Findings and comparison history
 

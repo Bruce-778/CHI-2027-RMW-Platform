@@ -16,8 +16,8 @@ Open `http://localhost:3000`. Useful review routes:
 - `/?view=work` — Phase 1 waste-sorting workspace
 - `/?view=checkpoint` — one-minute RMW save window with an extracted problem state and knowledge network
 - `/?view=interruption` — letter 2-back and color-recognition interruption tasks
-- `/?view=day2` — Day 2 RMW workspace
-- `/?view=day2&condition=summary&lang=en` — English Auto Summary condition
+- `/?view=recovery` — RMW recovery workspace
+- `/?view=recovery&condition=summary&lang=en` — English Auto Summary condition
 - `/?view=recall` — unsupported recall gate
 - `/admin` — researcher console
 

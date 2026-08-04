@@ -10,12 +10,11 @@ import {
 import { Background, Controls, Handle, Position, ReactFlow, type Edge, type Node } from "@xyflow/react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createInitialCards, relations } from "@/lib/demo-data";
-import { eventLog } from "@/lib/event-log";
+import { eventLog, getOrCreateParticipantId } from "@/lib/event-log";
 import {
   getResearchTask,
   phaseOneGoals,
@@ -32,10 +31,10 @@ type ChatMessage = { role: "user" | "assistant"; text: string };
 const copy = {
   "zh-CN": {
     study: "大学生科研思考与恢复研究", consent: "我已阅读并同意参与研究",
-    anonymous: "匿名登入", anonymousPlaceholder: "请输入匿名编号", enter: "开始研究", language: "界面语言",
+    anonymous: "本次研究编号", enter: "开始研究", language: "界面语言",
     pretitle: "开始前，先了解你的经验", next: "继续", back: "返回",
     materials: "材料", chat: "AI 助手", memo: "工作区", recovery: "推理恢复支持",
-    day: "Day 2 · 恢复阶段", saved: "已保存", help: "帮助", progress: "阅读进度",
+    day: "恢复阶段", saved: "已保存", help: "帮助", progress: "阅读进度",
     ask: "向 AI 助手提问…", disclaimer: "AI 可能出错，请结合材料与证据判断。",
     memoPlaceholder: "继续写下你的研究问题、发现与实验计划…", words: "字",
     resume: "恢复摘要", cards: "推理卡片", network: "知识网络", relations: "关系列表",
@@ -48,17 +47,17 @@ const copy = {
   },
   en: {
     study: "Student Research Framing & Recovery Study", consent: "I have read the information and agree to participate",
-    anonymous: "Anonymous login", anonymousPlaceholder: "Enter an anonymous ID", enter: "Start study", language: "Interface language",
+    anonymous: "Research session ID", enter: "Start study", language: "Interface language",
     pretitle: "A few questions about your experience", next: "Continue", back: "Back",
     materials: "Materials", chat: "AI assistant", memo: "Workspace", recovery: "Reasoning recovery",
-    day: "Day 2 · Resume", saved: "Saved", help: "Help", progress: "Reading progress",
+    day: "Resume", saved: "Saved", help: "Help", progress: "Reading progress",
     ask: "Ask the AI assistant…", disclaimer: "AI can make mistakes. Check important claims against the evidence.",
     memoPlaceholder: "Continue your research problem, findings, and study plan…", words: "words",
     resume: "Resume brief", cards: "Reasoning cards", network: "Knowledge network", relations: "Relation list",
     currentGoal: "Current goal", position: "Reasoning position", uncertain: "Still uncertain", ruled: "Ruled out", nextStep: "Next step",
     continue: "Continue research", evidence: "View evidence", pin: "Pin", verify: "Verified", expire: "Expire", restore: "Restore",
     allCards: "All cards", ready: "Resume from here", readFirst: "Review the brief first, then inspect the uncertain claim.",
-    recallTitle: "Before viewing recovery support, recall yesterday’s work", recallSub: "Answer from memory. Your recovery material appears only after submission.",
+    recallTitle: "Before viewing recovery support, recall your earlier work", recallSub: "Answer from memory. Your recovery material appears only after submission.",
     submitRecall: "Submit and reveal support", completed: "Study complete", completeText: "Thank you. Your responses have been saved securely.",
     desktop: "Desktop device required", desktopText: "To keep experimental conditions consistent, use a desktop browser at least 1100px wide.",
   },
@@ -72,6 +71,7 @@ export function RmwApp() {
   const [memo, setMemo] = useState(() => getResearchTask("waste").starterMemo["zh-CN"]);
   const [chat, setChat] = useState<ChatMessage[]>(() => [{ role: "assistant", text: getResearchTask("waste").assistantIntro["zh-CN"] }]);
   const [testMode, setTestMode] = useState(true);
+  const [participantId, setParticipantId] = useState("");
   const t = copy[locale];
 
   useEffect(() => {
@@ -80,12 +80,13 @@ export function RmwApp() {
     const c = params.get("condition") as Condition | null;
     const lang = params.get("lang") as Locale | null;
     const frame = requestAnimationFrame(() => {
+      setParticipantId(getOrCreateParticipantId());
       setTestMode(params.get("timed") !== "1");
       if (lang === "en" || lang === "zh-CN") setLocale(lang);
       if (c && ["summary", "notes", "rmw"].includes(c)) setCondition(c);
       if (view === "checkpoint") setScreen("checkpoint");
       if (view === "interruption") setScreen("interruption");
-      if (view === "day2") setScreen("workspace");
+      if (view === "recovery") setScreen("workspace");
       if (view === "recall") setScreen("recall");
       if (view === "task") setScreen("brief");
       if (view === "work") setScreen("work");
@@ -99,11 +100,11 @@ export function RmwApp() {
         <div className="max-w-md"><SquaresFour size={42} className="mx-auto mb-5 text-primary" /><h1 className="text-2xl font-semibold">{t.desktop}</h1><p className="mt-3 text-muted-foreground">{t.desktopText}</p></div>
       </div>
       <main className="desktop-app min-h-screen">
-        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} onStart={() => {
+        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantId={participantId} onStart={() => {
           const task = getResearchTask("waste");
           setMemo(task.starterMemo[locale]);
           setChat([{ role: "assistant", text: task.assistantIntro[locale] }]);
-          eventLog("research_task_started", { taskId: "waste", assignment: "single_task" }, { stage: "task_setup" });
+          eventLog("research_task_started", { taskId: "waste", assignment: "single_task", participantId }, { stage: "task_setup" });
           setScreen("brief");
         }} t={t} />}
         {screen === "brief" && <TaskBrief locale={locale} taskId={taskId} setScreen={setScreen} />}
@@ -128,25 +129,27 @@ function LanguageChoice({ locale, setLocale }: { locale: Locale; setLocale: (l: 
 function Landing({
   locale,
   setLocale,
+  participantId,
   onStart,
   t,
 }: {
   locale: Locale;
   setLocale: (l: Locale) => void;
+  participantId: string;
   onStart: () => void;
   t: typeof copy[Locale];
 }) {
   const [consent, setConsent] = useState(true);
-  const [anonymousId, setAnonymousId] = useState("");
   return <div className="min-h-screen bg-[#f8f7f3]">
     <header className="mx-auto flex h-20 max-w-6xl items-center justify-between px-8"><Brand /><LanguageChoice locale={locale} setLocale={setLocale} /></header>
     <section className="mx-auto grid max-w-6xl grid-cols-[1.08fr_.92fr] items-center gap-16 px-8 py-20">
       <div><h1 className="max-w-xl text-[54px] font-semibold leading-[1.08] tracking-[-.04em]">{t.study}</h1></div>
       <div className="rounded-2xl border bg-white/90 p-8 shadow-[0_24px_70px_rgba(34,42,70,.10)] backdrop-blur">
         <label className="text-sm font-semibold" htmlFor="anonymous-id">{t.anonymous}</label>
-        <Input id="anonymous-id" autoComplete="off" value={anonymousId} onChange={event=>setAnonymousId(event.target.value)} placeholder={t.anonymousPlaceholder} className="mt-3 h-12" />
+        <div id="anonymous-id" className="mt-3 rounded-xl border bg-muted/35 px-4 py-3 font-mono text-base font-semibold tracking-wider text-primary">{participantId || (locale==="zh-CN"?"正在生成…":"Generating…")}</div>
+        <p className="mt-2 text-xs text-muted-foreground">{locale==="zh-CN"?"编号由系统自动生成，无需填写。":"Generated automatically; no entry is required."}</p>
         <label className="mt-7 flex cursor-pointer items-start gap-3 text-sm leading-6"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} className="mt-1 size-4 accent-[var(--primary)]"/><span>{t.consent}</span></label>
-        <TimedButton seconds={5} ready={consent&&Boolean(anonymousId.trim())} locale={locale} label={t.enter} blockedLabel={locale==="zh-CN"?"请填写匿名编号并勾选同意":"Enter an anonymous ID and provide consent"} onClick={()=>{eventLog("consent_submitted",{locale,access:"anonymous",anonymousId:anonymousId.trim().slice(0,64)});onStart()}} className="mt-7 h-12 w-full" />
+        <TimedButton seconds={5} ready={consent&&Boolean(participantId)} locale={locale} label={t.enter} blockedLabel={locale==="zh-CN"?"请勾选同意":"Provide consent to continue"} onClick={()=>{eventLog("consent_submitted",{locale,access:"anonymous",participantId});onStart()}} className="mt-7 h-12 w-full" />
         <p className="mt-3 text-center text-[11px] text-muted-foreground">{locale==="zh-CN"?"按钮将在阅读时间结束且信息完整后开放。":"The button unlocks after the reading time and required fields are complete."}</p>
       </div>
     </section>
@@ -346,10 +349,10 @@ function CenteredShell({step,title,children}:{step:string;title:string;children:
 function Brand(){return <div className="flex items-center gap-3"><div className="grid size-10 place-items-center rounded-xl bg-primary text-white"><Brain size={23} weight="duotone"/></div><div><div className="font-semibold tracking-tight">RMW</div><div className="text-[10px] uppercase tracking-[.16em] text-muted-foreground">Reasoning Memory</div></div></div>}
 
 function Recall({ locale,setScreen,t }: {locale:Locale;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
-  const prompts=[t.currentGoal,t.position,t.uncertain,t.ruled,t.nextStep];
+  const prompts=[t.currentGoal,t.position,t.uncertain];
   const [responses,setResponses]=useState<string[]>(prompts.map(()=>""));
   const complete=responses.every(response=>response.trim());
-  return <CenteredShell step="Day 2 · 01:30" title={t.recallTitle}><p className="mb-7 text-sm leading-6 text-muted-foreground">{t.recallSub}</p><div className="space-y-4">{prompts.map((p,i)=><label key={p} className="block"><span className="mb-2 block text-sm font-medium">{i+1}. {p}</span><Textarea rows={2} placeholder="…" value={responses[i]} onChange={event=>setResponses(current=>current.map((value,index)=>index===i?event.target.value:value))}/></label>)}</div><TimedButton seconds={5} ready={complete} locale={locale} label={t.submitRecall} blockedLabel={locale==="zh-CN"?"请完成全部回忆题":"Answer every recall prompt"} className="mt-8 h-12 w-full" onClick={()=>{eventLog("unsupported_recall_submitted",{answeredCount:responses.filter(Boolean).length,responseLengths:responses.map(value=>value.length)},{stage:"unsupported_recall"});eventLog("recovery_support_revealed",{}, {stage:"recovery"});setScreen("workspace")}} /></CenteredShell>
+  return <CenteredShell step={locale==="zh-CN"?"无辅助回忆 · 01:30":"Unsupported recall · 01:30"} title={t.recallTitle}><p className="mb-7 text-sm leading-6 text-muted-foreground">{t.recallSub}</p><div className="space-y-4">{prompts.map((p,i)=><label key={p} className="block"><span className="mb-2 block text-sm font-medium">{i+1}. {p}</span><Textarea rows={2} placeholder="…" value={responses[i]} onChange={event=>setResponses(current=>current.map((value,index)=>index===i?event.target.value:value))}/></label>)}</div><TimedButton seconds={5} ready={complete} locale={locale} label={t.submitRecall} blockedLabel={locale==="zh-CN"?"请完成全部回忆题":"Answer every recall prompt"} className="mt-8 h-12 w-full" onClick={()=>{eventLog("unsupported_recall_submitted",{answeredCount:responses.filter(Boolean).length,responseLengths:responses.map(value=>value.length)},{stage:"unsupported_recall"});eventLog("recovery_support_revealed",{}, {stage:"recovery"});setScreen("workspace")}} /></CenteredShell>
 }
 
 function WorkspaceTour({locale,onComplete}:{locale:Locale;onComplete:()=>void}) {

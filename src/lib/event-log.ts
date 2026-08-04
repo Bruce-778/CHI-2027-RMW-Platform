@@ -10,6 +10,16 @@ export interface StudyEvent {
 }
 
 const STORAGE_KEY = "rmw-demo-events";
+const PARTICIPANT_KEY = "rmw-participant-id";
+
+export function getOrCreateParticipantId() {
+  if (typeof window === "undefined") return "";
+  const existing = sessionStorage.getItem(PARTICIPANT_KEY);
+  if (existing) return existing;
+  const generated = `RMW-${crypto.randomUUID().replaceAll("-", "").slice(0, 8).toUpperCase()}`;
+  sessionStorage.setItem(PARTICIPANT_KEY, generated);
+  return generated;
+}
 
 export function readStudyEvents(): StudyEvent[] {
   if (typeof window === "undefined") return [];
@@ -28,6 +38,7 @@ export function eventLog(
 ) {
   if (typeof window === "undefined") return;
   const current = readStudyEvents();
+  const anonymousCode = getOrCreateParticipantId();
   const item: StudyEvent = {
     id: crypto.randomUUID(),
     type,
@@ -35,7 +46,7 @@ export function eventLog(
     targetType: context.targetType,
     targetId: context.targetId,
     sequenceNumber: current.length + 1,
-    payload,
+    payload: { anonymousCode, ...payload },
     at: new Date().toISOString(),
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify([...current, item].slice(-1000)));
