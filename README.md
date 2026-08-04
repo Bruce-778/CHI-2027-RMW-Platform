@@ -37,7 +37,7 @@ DEEPSEEK_MODEL=deepseek-v4-flash
 
 Create `.env.local` in this directory, add the values above, and restart `pnpm dev`. Do not prefix the key with `NEXT_PUBLIC_`, paste it into a component, or commit `.env.local`.
 
-The participant does not choose the model. The server uses `DEEPSEEK_MODEL`, falling back to `deepseek-v4-flash`. Without `DEEPSEEK_API_KEY`, the tutor remains usable in scripted demo mode, but the checkpoint does not generate or display a Problem State. It never substitutes preset cards for a failed or unavailable extraction. In Vercel, add the same values under Project Settings → Environment Variables and redeploy.
+The participant does not choose the model. The server uses `DEEPSEEK_MODEL`, falling back to `deepseek-v4-flash`. Without `DEEPSEEK_API_KEY`, the tutor reports that AI is unavailable and the checkpoint does not generate or display a Problem State. The platform never substitutes scripted replies or preset cards for a failed or unavailable model call. In Vercel, add the same values under Project Settings → Environment Variables and redeploy.
 
 ## Experimental-task controls
 
@@ -60,7 +60,7 @@ The demo now follows one closed-loop interruption protocol:
 
 For local review, test mode is the default and bypasses the Phase 1 and checkpoint waiting gates. Append `?timed=1` (or `&timed=1` when a query already exists) to enforce the 10-minute Phase 1 gate and one-minute save window.
 
-The DeepSeek tutor prompt requires a concise core judgment, 2–4 numbered points, explicit separation of evidence/inference/unverified claims, source labels, and a minimum next action. The extraction prompt produces both the bounded reasoning-card set and relations for the knowledge network from the same trace.
+The DeepSeek tutor uses a conversational research-partner prompt: it responds to the participant's current intent, uses ordinary short paragraphs, structures only when useful, cites materials for consequential claims, and preserves uncertainty without forcing fixed labels or a repeated answer template. The extraction prompt separately produces the bounded reasoning-card set and relations for the knowledge network from the same trace.
 
 The researcher console can export the local demo event stream as JSON. The production schema in `supabase/migrations/202607140001_initial_schema.sql` includes server-mediated sessions, extraction runs, cards, sources, relations, recovery artifacts, recall responses, and sequenced events.
 
