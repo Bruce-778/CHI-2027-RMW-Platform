@@ -355,46 +355,114 @@ function CheckpointNetwork({
 }
 
 function CheckpointGuide({ locale, open, onOpenChange }: { locale: Locale; open: boolean; onOpenChange: (open: boolean) => void }) {
-  const chinese=locale==="zh-CN";
-  const items=[
-    ["checkpoint-goals",Target,chinese?"目标结构":"Goal structure",chinese?"这里汇总主目标、活跃子目标、挂起目标和已排除路径。点选任意卡片即可校准。":"This area summarizes the main, active, suspended, and rejected paths. Select any card to calibrate it."],
-    ["checkpoint-state",Brain,chinese?"候选 Problem State":"Candidate problem state",chinese?"右侧检视器支持接受、编辑、置顶、存疑与过期；颜色会随状态变化。":"Use the inspector to accept, edit, pin, mark uncertain, or expire. Card colors follow the calibrated status."],
-    ["checkpoint-network",Graph,chinese?"知识网络":"Knowledge network",chinese?"点击网络节点也可选中卡片并校准；节点颜色与卡片状态同步。":"Click a network node to select and calibrate that card; node colors stay in sync with status."],
+  const allSteps = locale === "zh-CN" ? [
+    { target: "checkpoint-timeline", title: "保存阶段时间轴", body: "这里展示实验流程。您当前处于第 2 阶段「保存窗口 (Save Window)」，系统正结合第一阶段的记录归纳 Problem State。" },
+    { target: "checkpoint-goals", title: "目标结构分布", body: "此处按层级汇总主目标、活跃子目标、挂起分支与弃用路径。它们构成了研究推理的核心主干。" },
+    { target: "checkpoint-state", title: "候选 Problem State 列表", body: "由 DeepSeek 提取的推理卡片。每张卡片对应一个推理要点，左侧边框颜色代表其认知状态（Active / Uncertain / Expired）。" },
+    { target: "checkpoint-inspector", title: "卡片校准检视器", body: "在此检视选中的卡片。您可以切换状态、置顶关键要点、编辑说明文字，或点击查阅原始对话与材料证据。" },
+    { target: "checkpoint-network", title: "知识网络逻辑图谱", body: "以推导网络直观呈现思考块之间的因果推导与辩驳挑战逻辑。点击网络中的节点可快速选中并校准卡片。" },
+    { target: "checkpoint-empty", title: "Problem State 提取说明", body: "当未能成功归纳或处于测试状态时，此区域会显示状态提示。在实际实验中，需在工作区写入有效的思考记录以触发提取。" },
+    { target: "checkpoint-footer", title: "保存与进度控制", body: "此处展示当前保存窗口的等待倒计时或完成状态。在测试模式或倒计时结束后，可点击右侧按钮进入下一阶段。" },
+  ] : [
+    { target: "checkpoint-timeline", title: "Save Window Stage", body: "Indicates you are in Stage 2 (Save Window). AI summarizes your Problem State based on your Phase 1 work." },
+    { target: "checkpoint-goals", title: "Goal Structure", body: "Summarizes the main goal, active subgoals, suspended tasks, and rejected paths forming your reasoning framework." },
+    { target: "checkpoint-state", title: "Candidate Problem State", body: "Reasoning cards extracted by DeepSeek. Card colors reflect their epistemic status (Active, Uncertain, Expired)." },
+    { target: "checkpoint-inspector", title: "Card Inspector", body: "Inspect selected cards here. Calibrate status, pin key points, edit text, or trace back to chat/material evidence." },
+    { target: "checkpoint-network", title: "Knowledge Network", body: "Visualizes logical leads-to and challenges relations between reasoning blocks. Click nodes to select and calibrate matching cards." },
+    { target: "checkpoint-empty", title: "Problem State Status", body: "Shows extraction status and notices when cards are not yet generated or when testing without API keys." },
+    { target: "checkpoint-footer", title: "Save & Progress Control", body: "Displays countdown timer or completion status. In test mode or when finished, proceed to the next stage using the right button." },
   ];
-  const [step,setStep]=useState(0);
-  const [rect,setRect]=useState<DOMRect|null>(null);
-  const targetId=String(items[step][0]);
-  useEffect(()=>{
-    if(!open)return;
-    const update=()=>{
-      const target=document.querySelector(`[data-tour="${targetId}"]`);
-      if(target)setRect(target.getBoundingClientRect());
+
+  const [availableSteps, setAvailableSteps] = useState(allSteps);
+  const [index, setIndex] = useState(0);
+  const [rect, setRect] = useState<DOMRect | null>(null);
+
+  // Filter steps based on elements currently present in DOM
+  useEffect(() => {
+    if (!open) return;
+    const valid = allSteps.filter((s) => Boolean(document.querySelector(`[data-tour="${s.target}"]`)));
+    if (valid.length > 0) {
+      setAvailableSteps(valid);
+      setIndex(0);
+    }
+  }, [open]);
+
+  const step = availableSteps[Math.min(index, availableSteps.length - 1)] || availableSteps[0];
+
+  useEffect(() => {
+    if (!open || !step) return;
+    const update = () => {
+      const element = document.querySelector<HTMLElement>(`[data-tour="${step.target}"]`);
+      if (element) {
+        element.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+        setRect(element.getBoundingClientRect());
+      } else {
+        setRect(null);
+      }
     };
-    const frame=requestAnimationFrame(update);
-    window.addEventListener("resize",update);
-    window.addEventListener("scroll",update,true);
-    return()=>{cancelAnimationFrame(frame);window.removeEventListener("resize",update);window.removeEventListener("scroll",update,true);};
-  },[open,targetId]);
-  if(!open||!rect)return null;
-  const [,I,title,description]=items[step];
-  const Icon=I as typeof Brain;
-  const gap=8;
-  const top=Math.max(0,rect.top-gap);
-  const left=Math.max(0,rect.left-gap);
-  const right=Math.min(window.innerWidth,rect.right+gap);
-  const bottom=Math.min(window.innerHeight,rect.bottom+gap);
-  const calloutStyle={top:`${Math.max(16,Math.min(window.innerHeight-250,rect.top+12))}px`,left:right+340<window.innerWidth?`${right+18}px`:`${Math.max(16,left-338)}px`};
-  const finish=()=>{setStep(0);onOpenChange(false);};
-  return <div className="fixed inset-0 z-[80]" role="dialog" aria-modal="true" aria-label={chinese?"保存窗口分步导览":"Save-window tour"}>
-    <div className="absolute bg-slate-950/55 backdrop-blur-[2px]" style={{inset:"0 0 auto 0",height:top}}/>
-    <div className="absolute bg-slate-950/55 backdrop-blur-[2px]" style={{top,left:0,width:left,height:bottom-top}}/>
-    <div className="absolute bg-slate-950/55 backdrop-blur-[2px]" style={{top,left:right,right:0,height:bottom-top}}/>
-    <div className="absolute bg-slate-950/55 backdrop-blur-[2px]" style={{top:bottom,left:0,right:0,bottom:0}}/>
-    <div className="pointer-events-none absolute rounded-2xl ring-4 ring-white shadow-[0_0_0_2px_var(--primary),0_18px_70px_rgba(13,22,48,.32)]" style={{top,left,width:right-left,height:bottom-top}}/>
-    <aside className="absolute w-80 rounded-2xl border bg-white p-5 shadow-[0_24px_80px_rgba(10,18,44,.28)]" style={calloutStyle}>
-      <div className="flex items-center justify-between"><span className="grid size-10 place-items-center rounded-xl bg-secondary text-primary"><Icon size={21}/></span><span className="text-xs font-semibold text-muted-foreground">{step+1} / {items.length}</span></div>
-      <h2 className="mt-4 text-lg font-semibold">{String(title)}</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">{String(description)}</p>
-      <div className="mt-5 flex justify-between"><Button variant="ghost" size="sm" onClick={finish}>{chinese?"退出导览":"Exit"}</Button><Button size="sm" onClick={()=>step===items.length-1?finish():setStep(current=>current+1)}>{step===items.length-1?(chinese?"完成":"Done"):(chinese?"下一步":"Next")}<ArrowRight/></Button></div>
+    update();
+    const timer = setTimeout(update, 200);
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [open, index, step?.target]);
+
+  if (!open || !step || !rect) return null;
+
+  const panelWidth = 340;
+  const preferredLeft = rect.right + 24;
+  const panelLeft = preferredLeft + panelWidth <= window.innerWidth - 24
+    ? preferredLeft
+    : Math.max(24, rect.left - panelWidth - 24);
+  const panelTop = Math.max(86, Math.min(window.innerHeight - 290, rect.top + 16));
+
+  const finish = () => {
+    setIndex(0);
+    onOpenChange(false);
+  };
+
+  return <div className="fixed inset-0 z-[80]" role="dialog" aria-modal="true" aria-label={locale === "zh-CN" ? "保存窗口全屏解释浮窗" : "Save window guided tour overlay"}>
+    <div
+      className="absolute rounded-2xl border-2 border-white/95 transition-all duration-300"
+      style={{
+        left: Math.max(8, rect.left - 6),
+        top: Math.max(8, rect.top - 6),
+        width: rect.width + 12,
+        height: rect.height + 12,
+        boxShadow: "0 0 0 9999px rgba(15, 19, 32, .76)",
+      }}
+    />
+    <aside className="absolute w-[340px] rounded-2xl border border-white/20 bg-white p-6 shadow-2xl transition-all duration-300" style={{ left: panelLeft, top: panelTop }}>
+      <div className="flex items-center justify-between">
+        <Badge variant="secondary">{index + 1} / {availableSteps.length}</Badge>
+        <span className="text-[10px] font-semibold uppercase tracking-[.16em] text-muted-foreground">{locale === "zh-CN" ? "模块解释" : "Block guide"}</span>
+      </div>
+      <h2 className="mt-4 text-xl font-semibold tracking-tight">{step.title}</h2>
+      <p className="mt-3 text-sm leading-6 text-muted-foreground">{step.body}</p>
+      <div className="mt-6 flex items-center justify-between">
+        <Button variant="ghost" disabled={index === 0} onClick={() => setIndex((current) => current - 1)}>
+          {locale === "zh-CN" ? "上一步" : "Back"}
+        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={finish}>
+            {locale === "zh-CN" ? "退出" : "Exit"}
+          </Button>
+          <Button className="h-10 px-4" onClick={() => {
+            if (index < availableSteps.length - 1) {
+              setIndex((current) => current + 1);
+            } else {
+              finish();
+            }
+          }}>
+            {index === availableSteps.length - 1 ? (locale === "zh-CN" ? "完成" : "Done") : (locale === "zh-CN" ? "下一步" : "Next")}
+            <ArrowRight size={16} />
+          </Button>
+        </div>
+      </div>
     </aside>
   </div>;
 }
@@ -530,7 +598,9 @@ export function RmwCheckpoint({
   return <div className="min-h-screen bg-[#f7f6f2] px-6 py-5">
     <CheckpointGuide locale={locale} open={guideOpen} onOpenChange={setGuideOpen}/>
     <div className="mx-auto max-w-[1480px]">
-      <ExperimentTimeline locale={locale} active="save" />
+      <div data-tour="checkpoint-timeline">
+        <ExperimentTimeline locale={locale} active="save" />
+      </div>
       <header className="flex items-end justify-between py-6">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">{t.title}</h1>
@@ -539,7 +609,10 @@ export function RmwCheckpoint({
         </div>
         <div className="flex items-center gap-3">
           <Badge variant={mode === "live" ? "default" : "secondary"}>{modeLabel}</Badge>
-          <button onClick={() => setGuideOpen(true)} aria-label={locale === "zh-CN" ? "查看说明" : "View guide"} className="grid size-9 place-items-center rounded-lg border bg-white hover:bg-muted"><Question size={18} /></button>
+          <Button onClick={() => setGuideOpen(true)} variant="outline" className="h-9 gap-2 border-primary/30 bg-white font-medium text-primary hover:bg-primary/5">
+            <Question size={16} />
+            {locale === "zh-CN" ? "浮窗解释模式" : "Guided Tour Overlay"}
+          </Button>
         </div>
       </header>
 
@@ -563,15 +636,17 @@ export function RmwCheckpoint({
                 <StateTile key={card.id} card={card} locale={locale} selected={selected === card.id} onSelect={() => selectCard(card.id)} />
               ))}
             </div>
-            {selectedCard && <CheckpointInspector
-              key={`${selectedCard.id}-${locale}`}
-              card={selectedCard}
-              locale={locale}
-              t={t}
-              updateStatus={updateStatus}
-              togglePin={togglePin}
-              updateContent={updateContent}
-            />}
+            <div data-tour="checkpoint-inspector">
+              {selectedCard && <CheckpointInspector
+                key={`${selectedCard.id}-${locale}`}
+                card={selectedCard}
+                locale={locale}
+                t={t}
+                updateStatus={updateStatus}
+                togglePin={togglePin}
+                updateContent={updateContent}
+              />}
+            </div>
           </div>
         </article>
       </section>
@@ -580,14 +655,14 @@ export function RmwCheckpoint({
         <div className="mb-3 flex items-center justify-between"><div><h2 className="flex items-center gap-2 font-semibold"><Graph size={20} className="text-primary" />{t.network}</h2><p className="mt-1 text-xs text-muted-foreground">{locale === "zh-CN" ? "点击节点可选中并校准对应卡片。" : "Click a node to select and calibrate the matching card."}</p></div><Badge variant="outline">{relations.length} relations</Badge></div>
         <CheckpointNetwork cards={cards} relations={relations} locale={locale} selected={selectedCard?.id || ""} onSelect={selectCard} />
       </section>
-      </> : <section className="rounded-2xl border bg-white px-8 py-16 text-center shadow-[0_12px_40px_rgba(35,43,70,.05)]">
+      </> : <section data-tour="checkpoint-empty" className="rounded-2xl border bg-white px-8 py-16 text-center shadow-[0_12px_40px_rgba(35,43,70,.05)]">
         <div className="mx-auto grid size-12 place-items-center rounded-xl bg-secondary text-primary">{mode === "loading" ? <Brain size={25} /> : <WarningCircle size={25} />}</div>
         <h2 className="mt-5 text-lg font-semibold">{locale === "zh-CN" ? "没有可显示的 Problem State" : "No problem state to display"}</h2>
         <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">{emptyMessage}</p>
         {mode !== "loading" && <Button variant="outline" className="mt-6" onClick={onBack}>{locale === "zh-CN" ? "返回工作区继续研究" : "Return to the workspace"}</Button>}
       </section>}
 
-      <div className="mt-5 flex items-center justify-between rounded-2xl border bg-white p-4">
+      <div data-tour="checkpoint-footer" className="mt-5 flex items-center justify-between rounded-2xl border bg-white p-4">
         <div className="flex items-center gap-3 text-sm"><Clock size={20} className="text-primary" /><div><p className="font-medium">{footerStatus}</p>{!testMode&&extractionReady&&<p className="text-xs text-muted-foreground">{remaining > 0 ? formatClock(remaining) : "00:00"}</p>}</div></div>
         <div className="text-right">
           {!testMode&&earlyNotice && remaining > 0 && <p role="status" className="mb-2 text-xs text-amber-700">{t.early}</p>}
