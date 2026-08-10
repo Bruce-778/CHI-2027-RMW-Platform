@@ -109,7 +109,7 @@ export function RmwApp() {
       setParticipantId(getOrCreateParticipantId());
       setTestMode(params.get("timed") !== "1");
       if (lang === "en" || lang === "zh-CN") setLocale(lang);
-      if (c && ["summary", "notes", "rmw"].includes(c)) setCondition(c);
+      if (c && ["summary", "notes", "rmw", "control"].includes(c)) setCondition(c);
       if (view === "checkpoint") setScreen("checkpoint");
       if (view === "interruption") setScreen("interruption");
       if (view === "recovery") setScreen("workspace");
@@ -132,16 +132,16 @@ export function RmwApp() {
         <div className="max-w-md"><SquaresFour size={42} className="mx-auto mb-5 text-primary" /><h1 className="text-2xl font-semibold">{t.desktop}</h1><p className="mt-3 text-muted-foreground">{t.desktopText}</p></div>
       </div>
       <main className="desktop-app min-h-screen">
-        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantId={participantId} onStart={async () => {
+        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantId={participantId} condition={condition} setCondition={setCondition} onStart={async () => {
           const task = getResearchTask("waste");
           void startRemoteStudySession({ participantCode: participantId, locale, condition, taskId: "waste" });
-          eventLog("consent_submitted", { locale, access: "anonymous", participantId }, { stage: "consent" });
+          eventLog("consent_submitted", { locale, access: "anonymous", participantId, condition }, { stage: "consent" });
           completionSubmittedRef.current = false;
           setMemo(task.starterMemo[locale]);
           setChat([{ role: "assistant", text: task.assistantIntro[locale] }]);
           setProblemState(null);
           saveProblemStateSnapshot(null);
-          eventLog("research_task_started", { taskId: "waste", assignment: "single_task", participantId }, { stage: "task_setup" });
+          eventLog("research_task_started", { taskId: "waste", assignment: "selected_condition", participantId, condition }, { stage: "task_setup" });
           setScreen("brief");
         }} t={t} />}
         {screen === "brief" && <TaskBrief locale={locale} taskId={taskId} setScreen={setScreen} />}
@@ -149,7 +149,7 @@ export function RmwApp() {
         {screen === "work" && <Workspace key={`work-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="work" problemState={problemState} memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} t={t} />}
         {screen === "checkpoint" && <RmwCheckpoint locale={locale} taskId={taskId} memo={memo} messages={chat} testMode={testMode} onBack={() => setScreen("work")} onContinue={(snapshot) => { if (snapshot) { setProblemState(snapshot); saveProblemStateSnapshot(snapshot); saveRemoteStudySnapshot({ memo, chat, problemState: snapshot }); } setScreen("interruption"); }} />}
         {screen === "interruption" && <InterruptionTask locale={locale} fastMode={testMode} onComplete={() => setScreen("recall")} />}
-        {screen === "recall" && <Recall locale={locale} setScreen={setScreen} t={t} />}
+        {screen === "recall" && <Recall locale={locale} condition={condition} setScreen={setScreen} t={t} />}
         {screen === "workspace" && <Workspace key={`recovery-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="recovery" problemState={problemState} memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} t={t} />}
         {screen === "complete" && <Complete setScreen={setScreen} t={t} />}
       </main>
@@ -167,12 +167,16 @@ function Landing({
   locale,
   setLocale,
   participantId,
+  condition,
+  setCondition,
   onStart,
   t,
 }: {
   locale: Locale;
   setLocale: (l: Locale) => void;
   participantId: string;
+  condition: Condition;
+  setCondition: (condition: Condition) => void;
   onStart: () => Promise<void>;
   t: typeof copy[Locale];
 }) {
@@ -185,6 +189,21 @@ function Landing({
         <label className="text-sm font-semibold" htmlFor="anonymous-id">{t.anonymous}</label>
         <div id="anonymous-id" className="mt-3 rounded-xl border bg-muted/35 px-4 py-3 font-mono text-base font-semibold tracking-wider text-primary">{participantId || (locale==="zh-CN"?"正在生成…":"Generating…")}</div>
         <p className="mt-2 text-xs text-muted-foreground">{locale==="zh-CN"?"编号由系统自动生成，无需填写。":"Generated automatically; no entry is required."}</p>
+        <fieldset className="mt-7">
+          <legend className="text-sm font-semibold">{locale==="zh-CN"?"选择测试方式":"Choose a test condition"}</legend>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">{locale==="zh-CN"?"此选项用于研究者测试。正式实验建议由系统随机分组。":"For researcher testing. Formal studies should assign conditions randomly."}</p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            {([
+              {value:"rmw",zh:"RMW 推理恢复",en:"RMW recovery"},
+              {value:"summary",zh:"自动摘要",en:"Auto summary"},
+              {value:"notes",zh:"用户笔记",en:"User notes"},
+              {value:"control",zh:"无辅助对照组",en:"No-support control"},
+            ] as const).map(option=><label key={option.value} className={`cursor-pointer rounded-xl border px-3 py-3 text-sm transition ${condition===option.value?"border-primary bg-secondary/65 text-primary":"bg-white hover:border-primary/45"}`}>
+              <input type="radio" name="condition" value={option.value} checked={condition===option.value} onChange={()=>setCondition(option.value)} className="mr-2 accent-[var(--primary)]"/>
+              {locale==="zh-CN"?option.zh:option.en}
+            </label>)}
+          </div>
+        </fieldset>
         <label className="mt-7 flex cursor-pointer items-start gap-3 text-sm leading-6"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} className="mt-1 size-4 accent-[var(--primary)]"/><span>{t.consent}</span></label>
         <TimedButton seconds={5} ready={consent&&Boolean(participantId)} locale={locale} label={t.enter} blockedLabel={locale==="zh-CN"?"请勾选同意":"Provide consent to continue"} onClick={onStart} className="mt-7 h-12 w-full" />
         <p className="mt-3 text-center text-[11px] text-muted-foreground">{locale==="zh-CN"?"按钮将在阅读时间结束且信息完整后开放。":"The button unlocks after the reading time and required fields are complete."}</p>
@@ -382,7 +401,7 @@ function CenteredShell({step,title,children}:{step?:string;title:string;children
 
 function Brand(){return <div className="flex items-center gap-3"><div className="grid size-10 place-items-center rounded-xl bg-primary text-white"><Brain size={23} weight="duotone"/></div><div><div className="font-semibold tracking-tight">RMW</div><div className="text-[10px] uppercase tracking-[.16em] text-muted-foreground">Reasoning Memory</div></div></div>}
 
-function Recall({ locale,setScreen,t }: {locale:Locale;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
+function Recall({ locale,condition,setScreen,t }: {locale:Locale;condition:Condition;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
   const fields=[
     { label:t.currentGoal, hint:t.currentGoalHint, key:"currentGoal" },
     { label:t.position, hint:t.positionHint, key:"position" },
@@ -397,7 +416,9 @@ function Recall({ locale,setScreen,t }: {locale:Locale;setScreen:(s:Screen)=>voi
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[.16em] text-muted-foreground">{locale==="zh-CN"?"无辅助回忆 · 01:30":"Unsupported recall · 01:30"}</p>
           <h1 id="recall-annotation-title" className="mt-2 text-2xl font-semibold tracking-tight">{t.recallTitle}</h1>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">{t.recallSub}</p>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">{condition==="control"
+            ?(locale==="zh-CN"?"请仅凭记忆填写。提交后直接继续研究，不会显示任何恢复辅助材料。":"Answer from memory only. After submission, you will continue without recovery support.")
+            :t.recallSub}</p>
         </div>
         <Brand />
       </div>
@@ -419,7 +440,7 @@ function Recall({ locale,setScreen,t }: {locale:Locale;setScreen:(s:Screen)=>voi
         seconds={5}
         ready={complete}
         locale={locale}
-        label={t.submitRecall}
+        label={condition==="control"?(locale==="zh-CN"?"提交并继续研究":"Submit and continue"):t.submitRecall}
         blockedLabel={locale==="zh-CN"?"请完成全部回忆题":"Answer every recall prompt"}
         className="mt-7 h-12 w-full"
         onClick={()=>{
@@ -435,7 +456,11 @@ function Recall({ locale,setScreen,t }: {locale:Locale;setScreen:(s:Screen)=>voi
           saveRemoteStudySnapshot({
             recall:{currentGoal:responses[0],position:responses[1],uncertain:responses[2]},
           });
-          eventLog("recovery_support_revealed",{}, {stage:"recovery"});
+          if(condition==="control"){
+            eventLog("control_resumption_started",{supportRevealed:false},{stage:"recovery"});
+          }else{
+            eventLog("recovery_support_revealed",{condition},{stage:"recovery"});
+          }
           setScreen("workspace");
         }}
       />
@@ -625,7 +650,7 @@ function Workspace({
       if(next===0&&!timerExpiredLoggedRef.current){
         timerExpiredLoggedRef.current=true;
         eventLog("workspace_timer_expired",{taskId,phase,durationSeconds:600},{stage:"research_work"});
-        const nextScreen: Screen=phase==="work"?"checkpoint":"complete";
+        const nextScreen: Screen=phase==="work"?(condition==="control"?"interruption":"checkpoint"):"complete";
         eventLog("workspace_auto_advanced",{taskId,phase,nextScreen},{stage:phase==="work"?"research_work":"recovery"});
         setScreen(nextScreen);
       }
@@ -633,7 +658,7 @@ function Workspace({
     updateTimer();
     const timer=window.setInterval(updateTimer,250);
     return()=>window.clearInterval(timer);
-  },[phase,setScreen,taskId]);
+  },[condition,phase,setScreen,taskId]);
 
   const resizeColumns=(divider:"left"|"right",clientX:number)=>{
     const bounds=workspaceGridRef.current?.getBoundingClientRect();
@@ -751,7 +776,7 @@ function Workspace({
       </button>
       <section ref={rightColumnRef} className="grid min-h-0 min-w-0 overflow-hidden bg-white" style={{gridTemplateRows:`${rightTopRatio}fr 10px ${100-rightTopRatio}fr`}}>
         {phase==="work"
-          ?<PhaseOnePanel locale={locale} taskId={taskId} memo={memo} remaining={remainingSeconds} testMode={testMode} setScreen={setScreen}/>
+          ?<PhaseOnePanel locale={locale} condition={condition} taskId={taskId} memo={memo} remaining={remainingSeconds} testMode={testMode} setScreen={setScreen}/>
           :<RecoveryPanel locale={locale} condition={condition} cards={cards} relations={recoveryRelations} selected={selected} setSelected={setSelected} updateStatus={updateStatus} togglePin={togglePin} updateContent={updateContent} setScreen={setScreen} t={t}/>}
         <button
           type="button"
@@ -816,7 +841,7 @@ function MemoPanel({locale,taskId,memo,setMemo,t}:{locale:Locale;taskId:Research
   </section>;
 }
 
-function PhaseOnePanel({locale,taskId,memo,remaining,testMode,setScreen}:{locale:Locale;taskId:ResearchTaskId;memo:string;remaining:number;testMode:boolean;setScreen:(screen:Screen)=>void}) {
+function PhaseOnePanel({locale,condition,taskId,memo,remaining,testMode,setScreen}:{locale:Locale;condition:Condition;taskId:ResearchTaskId;memo:string;remaining:number;testMode:boolean;setScreen:(screen:Screen)=>void}) {
   const task=getResearchTask(taskId);
   const [completed,setCompleted]=useState<Set<string>>(()=>new Set());
   const criterionId=(goalId:string,index:number)=>`${goalId}:${index}`;
@@ -844,11 +869,12 @@ function PhaseOnePanel({locale,taskId,memo,remaining,testMode,setScreen}:{locale
         })}</div>
       </section>)}</div>
     </div>
-    <div className="shrink-0 border-t bg-white px-5 py-3"><div className="mb-2 flex justify-between text-[10px] text-muted-foreground"><span>{checkpointReady?(locale==="zh-CN"?"保存窗口已开放":"Save window open"):(locale==="zh-CN"?"最后 3 分钟开放保存窗口":"Save opens in the final 3 minutes")}</span><span>{memoCount} {locale==="zh-CN"?"字":"words"} · {completed.size}/{totalCriteria} {locale==="zh-CN"?"评价点":"criteria"}</span></div><TimedButton seconds={10} ready={checkpointReady} locale={locale} label={locale==="zh-CN"?"保存推理位置并进入中断任务":"Save reasoning position and begin interruption"} blockedLabel={locale==="zh-CN"?"保存窗口尚未开放":"Save window not open yet"} className="h-11 w-full text-sm" onClick={()=>{eventLog("phase_one_checkpoint_requested",{taskId,completedGoals:completedGoalCount,completedCriteria:completed.size,totalCriteria,memoCount,remaining},{stage:"research_work"});setScreen("checkpoint")}} /></div>
+    <div className="shrink-0 border-t bg-white px-5 py-3"><div className="mb-2 flex justify-between text-[10px] text-muted-foreground"><span>{checkpointReady?(condition==="control"?(locale==="zh-CN"?"中断任务入口已开放":"Interruption task is available"):(locale==="zh-CN"?"保存窗口已开放":"Save window open")):(locale==="zh-CN"?"最后 3 分钟开放下一步":"Next step opens in the final 3 minutes")}</span><span>{memoCount} {locale==="zh-CN"?"字":"words"} · {completed.size}/{totalCriteria} {locale==="zh-CN"?"评价点":"criteria"}</span></div><TimedButton seconds={10} ready={checkpointReady} locale={locale} label={condition==="control"?(locale==="zh-CN"?"进入中断任务":"Begin interruption task"):(locale==="zh-CN"?"保存推理位置并进入中断任务":"Save reasoning position and begin interruption")} blockedLabel={locale==="zh-CN"?"下一步尚未开放":"Next step is not open yet"} className="h-11 w-full text-sm" onClick={()=>{const nextScreen=condition==="control"?"interruption":"checkpoint";eventLog(condition==="control"?"phase_one_control_completed":"phase_one_checkpoint_requested",{taskId,condition,completedGoals:completedGoalCount,completedCriteria:completed.size,totalCriteria,memoCount,remaining,nextScreen},{stage:"research_work"});setScreen(nextScreen)}} /></div>
   </section>;
 }
 
 function RecoveryPanel({locale,condition,cards,relations,selected,setSelected,updateStatus,togglePin,updateContent,setScreen,t}:{locale:Locale;condition:Condition;cards:ReasoningCard[];relations:CardRelation[];selected:string;setSelected:(s:string)=>void;updateStatus:(id:string,s:EpistemicStatus)=>void;togglePin:(id:string)=>void;updateContent:(id:string,value:string)=>void;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
+  if(condition==="control")return <div className="flex min-h-0 flex-col bg-[#fbfcfe]"><div className="flex h-14 shrink-0 items-center border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><Brain size={20} className="text-primary"/>{locale==="zh-CN"?"继续研究":"Continue research"}</h2></div><div className="m-6 rounded-xl border bg-white p-5 text-sm leading-6 text-muted-foreground">{locale==="zh-CN"?"本组不提供 Problem State、摘要或笔记等恢复辅助。请根据刚才的无辅助回忆继续完成研究任务。":"This condition provides no Problem State, summary, notes, or other recovery aid. Continue the task using your unsupported recall."}</div><PrimaryContinue locale={locale} setScreen={setScreen} t={t}/></div>;
   if(!cards.length)return <RecoveryShell t={t}><div className="m-6 rounded-xl border bg-white p-5 text-sm leading-6 text-muted-foreground">{locale==="zh-CN"?"本次没有保存经过参与者校准的 Problem State，因此不会显示演示卡片。":"No participant-calibrated problem state was saved, so no demo cards are shown."}</div><PrimaryContinue locale={locale} setScreen={setScreen} t={t}/></RecoveryShell>;
   const main=cards.find(card=>card.goalLevel==="main");
   const position=cards.filter(card=>card.goalLevel==="subgoal"&&card.status!=="expired").slice(0,2).map(card=>card.content[locale]).join("；");

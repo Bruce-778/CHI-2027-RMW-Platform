@@ -1,4 +1,4 @@
-export type Condition = "summary" | "notes" | "rmw";
+export type Condition = "control" | "summary" | "notes" | "rmw";
 export type Locale = "zh-CN" | "en";
 export type CardType = "goal" | "hypothesis" | "evidence" | "constraint" | "path" | "next_action";
 export type GoalLevel = "main" | "subgoal" | "suspended";

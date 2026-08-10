@@ -12,6 +12,7 @@ npm run dev
 Open `http://localhost:3000`. Useful review routes:
 
 - `/` — participant entry and full demo flow
+- `/?condition=control` — unsupported-recall control condition with no recovery aid
 - `/?view=task` — Phase 1 and final memo requirements
 - `/?view=work` — Phase 1 waste-sorting workspace
 - `/?view=checkpoint` — one-minute RMW save window with an extracted problem state and knowledge network
@@ -21,7 +22,7 @@ Open `http://localhost:3000`. Useful review routes:
 - `/?view=recall` — unsupported recall gate
 - `/admin` — password-protected researcher results console
 
-The participant flow uses one fixed task and does not expose a topic chooser. Configure `.env.local` from `.env.example` to enable DeepSeek and result collection.
+The participant flow uses one fixed task and does not expose a topic chooser. The entry screen exposes condition selection for researcher testing; a formal study should assign the condition through a randomized study link rather than participant choice. Configure `.env.local` from `.env.example` to enable DeepSeek and result collection.
 
 The current build starts in **test mode**: timing gates are bypassed so every screen can be reviewed immediately. Add `?timed=1` to a direct route to check the formal protocol. The formal Phase 1 duration is 10 minutes; its save window opens in the final three minutes.
 
@@ -57,6 +58,8 @@ The demo now follows one closed-loop interruption protocol:
 6. Collect three unsupported-recall responses before revealing recovery support.
 7. Resume with a minimal brief first, then reasoning cards, source backlinks, and the knowledge network.
 8. Continue research with editable reasoning cards while the local interaction history supports the current browser session.
+
+The `control` condition bypasses Problem State extraction and calibration. After the same interruption, it records the same unsupported-recall responses and returns the participant to the task without showing Problem State, a summary, or notes.
 
 For local review, test mode is the default and bypasses the Phase 1 and checkpoint waiting gates. Append `?timed=1` (or `&timed=1` when a query already exists) to enforce the 10-minute Phase 1 gate and one-minute save window.
 
