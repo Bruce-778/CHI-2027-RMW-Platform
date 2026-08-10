@@ -15,11 +15,6 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { eventLog, getOrCreateParticipantId } from "@/lib/event-log";
 import {
-  completeRemoteStudy,
-  saveRemoteStudySnapshot,
-  startRemoteStudySession,
-} from "@/lib/remote-results";
-import {
   readProblemStateSnapshot,
   saveProblemStateSnapshot,
   toCardRelations,
@@ -97,7 +92,6 @@ export function RmwApp() {
   const [testMode, setTestMode] = useState(true);
   const [participantId, setParticipantId] = useState("");
   const [problemState, setProblemState] = useState<ProblemStateSnapshot | null>(() => readProblemStateSnapshot());
-  const completionSubmittedRef = useRef(false);
   const t = copy[locale];
 
   useEffect(() => {
@@ -120,12 +114,6 @@ export function RmwApp() {
     return () => cancelAnimationFrame(frame);
   }, []);
 
-  useEffect(() => {
-    if (screen !== "complete" || completionSubmittedRef.current) return;
-    completionSubmittedRef.current = true;
-    completeRemoteStudy({ memo, chat, problemState });
-  }, [chat, memo, problemState, screen]);
-
   return (
     <>
       <div className="desktop-required fixed inset-0 z-50 hidden items-center justify-center bg-[#f7f6f2] p-8 text-center">
@@ -134,9 +122,7 @@ export function RmwApp() {
       <main className="desktop-app min-h-screen">
         {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantId={participantId} onStart={async () => {
           const task = getResearchTask("waste");
-          await startRemoteStudySession({ participantCode: participantId, locale, condition, taskId: "waste" });
           eventLog("consent_submitted", { locale, access: "anonymous", participantId }, { stage: "consent" });
-          completionSubmittedRef.current = false;
           setMemo(task.starterMemo[locale]);
           setChat([{ role: "assistant", text: task.assistantIntro[locale] }]);
           setProblemState(null);
@@ -147,7 +133,7 @@ export function RmwApp() {
         {screen === "brief" && <TaskBrief locale={locale} taskId={taskId} setScreen={setScreen} />}
         {screen === "survey" && <Survey locale={locale} taskId={taskId} setScreen={setScreen} t={t} />}
         {screen === "work" && <Workspace key={`work-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="work" problemState={problemState} memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} t={t} />}
-        {screen === "checkpoint" && <RmwCheckpoint locale={locale} taskId={taskId} memo={memo} messages={chat} testMode={testMode} onBack={() => setScreen("work")} onContinue={(snapshot) => { if (snapshot) { setProblemState(snapshot); saveProblemStateSnapshot(snapshot); saveRemoteStudySnapshot({ memo, chat, problemState: snapshot }); } setScreen("interruption"); }} />}
+        {screen === "checkpoint" && <RmwCheckpoint locale={locale} taskId={taskId} memo={memo} messages={chat} testMode={testMode} onBack={() => setScreen("work")} onContinue={(snapshot) => { if (snapshot) { setProblemState(snapshot); saveProblemStateSnapshot(snapshot); } setScreen("interruption"); }} />}
         {screen === "interruption" && <InterruptionTask locale={locale} fastMode={testMode} onComplete={() => setScreen("recall")} />}
         {screen === "recall" && <Recall locale={locale} setScreen={setScreen} t={t} />}
         {screen === "workspace" && <Workspace key={`recovery-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="recovery" problemState={problemState} memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} t={t} />}
@@ -374,7 +360,7 @@ function Survey({ locale, taskId, setScreen, t }: { locale:Locale;taskId:Researc
         </div>
       </section>)}
     </div>
-    <TimedButton seconds={8} ready={complete} locale={locale} label={t.next} blockedLabel={locale==="zh-CN"?"请完成全部题目":"Answer every question"} onClick={()=>{eventLog("pre_survey_completed",{taskId,responses,constructs:groups.map(group=>group.id),aiLiteracyScale:"AILS-CCS_15-item_5-point"},{stage:"pre_survey"});saveRemoteStudySnapshot({preSurvey:responses});setScreen("work")}} className="mt-10 h-12 w-full" />
+    <TimedButton seconds={8} ready={complete} locale={locale} label={t.next} blockedLabel={locale==="zh-CN"?"请完成全部题目":"Answer every question"} onClick={()=>{eventLog("pre_survey_completed",{taskId,responses,constructs:groups.map(group=>group.id),aiLiteracyScale:"AILS-CCS_15-item_5-point"},{stage:"pre_survey"});setScreen("work")}} className="mt-10 h-12 w-full" />
   </CenteredShell>;
 }
 
@@ -432,9 +418,6 @@ function Recall({ locale,setScreen,t }: {locale:Locale;setScreen:(s:Screen)=>voi
               uncertain:responses[2],
             },
           },{stage:"unsupported_recall"});
-          saveRemoteStudySnapshot({
-            recall:{currentGoal:responses[0],position:responses[1],uncertain:responses[2]},
-          });
           eventLog("recovery_support_revealed",{}, {stage:"recovery"});
           setScreen("workspace");
         }}
@@ -603,19 +586,6 @@ function Workspace({
   const timerExpiredLoggedRef=useRef(false);
   const centerColumnRatio=100-leftColumnRatio-rightColumnRatio;
   const timerText=`${String(Math.floor(remainingSeconds/60)).padStart(2,"0")}:${String(remainingSeconds%60).padStart(2,"0")}`;
-
-  useEffect(()=>{
-    const timeout=window.setTimeout(()=>saveRemoteStudySnapshot({memo,chat}),700);
-    return()=>window.clearTimeout(timeout);
-  },[chat,memo]);
-
-  useEffect(()=>{
-    if(phase!=="recovery")return;
-    const timeout=window.setTimeout(()=>saveRemoteStudySnapshot({
-      recoveryState:{cards,relations:recoveryRelations},
-    }),700);
-    return()=>window.clearTimeout(timeout);
-  },[cards,phase,recoveryRelations]);
 
   useEffect(()=>{
     if(countdownEndRef.current===null)countdownEndRef.current=Date.now()+600_000;
@@ -870,7 +840,7 @@ function RecoveryPanel({locale,condition,cards,relations,selected,setSelected,up
   </Tabs><PrimaryContinue locale={locale} setScreen={setScreen} t={t}/></RecoveryShell>;
 }
 
-function RecoveryShell({children,t}:{children:React.ReactNode;t:typeof copy[Locale]}) { return <div className="flex min-h-0 flex-col bg-[#fbfcfe]"><div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><div><h2 className="flex items-center gap-2 font-semibold"><Brain size={20} className="text-primary"/>{t.recovery}</h2></div><Badge variant="outline" className="bg-white text-[10px]"><Clock size={13}/>24h</Badge></div>{children}</div> }
+function RecoveryShell({children,t}:{children:React.ReactNode;t:typeof copy[Locale]}) { return <div className="flex min-h-0 flex-col bg-[#fbfcfe]"><div className="flex h-14 shrink-0 items-center border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><Brain size={20} className="text-primary"/>{t.recovery}</h2></div>{children}</div> }
 
 function ResumeBrief({locale,cards,t}:{locale:Locale;cards:ReasoningCard[];t:typeof copy[Locale]}) {
   const main=cards.find(card=>card.goalLevel==="main");

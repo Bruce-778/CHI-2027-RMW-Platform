@@ -2,7 +2,6 @@
   "name": "rmw-platform",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "pnpm@11.9.0",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -15,7 +14,6 @@
   "dependencies": {
     "@base-ui/react": "^1.6.0",
     "@phosphor-icons/react": "^2.1.10",
-    "@supabase/supabase-js": "^2.110.3",
     "@xyflow/react": "^12.11.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
