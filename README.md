@@ -67,9 +67,9 @@ The DeepSeek tutor uses a conversational research-partner prompt: it responds to
 
 ## Protected research results
 
-The participant client can only write through `/api/results`; it has no result-reading endpoint. Each write after consent requires a short-lived token signed by the server. `/api/research/results` requires a separate researcher session stored in an `HttpOnly`, `SameSite=Strict` cookie, and `/admin` is marked `noindex`. Database credentials and the researcher password never enter the participant bundle.
+The participant client can only write through `POST /api/results`; it has no result-reading endpoint. `GET /api/results` is a secret-free readiness check and returns `200 { "mode": "ready", "storage": "supabase" }` only when the server configuration and a minimal database query succeed. Each write after consent requires a short-lived token signed by the server. `/api/research/results` requires a separate researcher session stored in an `HttpOnly`, `SameSite=Strict` cookie, and `/admin` is marked `noindex`. Database credentials and the researcher password never enter the participant bundle.
 
-The system saves the pre-survey, memo, AI conversation, calibrated Problem State, unsupported recall, recovery-state edits, completion status, and interaction events. Browser outboxes retain unsent snapshots and events and retry them after a participant session becomes available.
+The system saves the pre-survey, memo, AI conversation, calibrated Problem State, unsupported recall, recovery-state edits, completion status, and interaction events. Browser outboxes retain unsent snapshots and events and retry them after a participant session becomes available. In formal mode (`?timed=1`), the participant cannot enter the study until the remote participant row is created. Test mode displays an explicit offline-continuation action after a storage failure. The completion page reports `saving`, `saved`, or locally `queued` state and offers a retry instead of claiming success before persistence finishes.
 
 For local rehearsal, set these server-side values. Results are written to `.rmw-results/results.json`; this mode is for one trusted machine only.
 
@@ -80,16 +80,29 @@ RESEARCHER_ADMIN_PASSWORD=replace-with-a-strong-researcher-password
 RESEARCHER_SESSION_SECRET=replace-with-a-different-long-random-secret
 ```
 
-For a deployed website, apply `supabase/migrations/202608100001_researcher_results.sql`, omit `RMW_LOCAL_RESULTS_DIR`, and configure:
+For a deployed website, apply every SQL file in `supabase/migrations/` in filename order (001, 002, then the hardening migration), omit `RMW_LOCAL_RESULTS_DIR`, and configure all of these Production variables:
 
 ```bash
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SECRET_KEY=your-service-role-or-secret-key
+SUPABASE_SECRET_KEY=sb_secret_your-server-secret
 PARTICIPANT_SESSION_SECRET=replace-with-a-long-random-secret
 RESEARCHER_ADMIN_PASSWORD=replace-with-a-strong-researcher-password
 RESEARCHER_SESSION_SECRET=replace-with-a-different-long-random-secret
+DEEPSEEK_API_KEY=your-deepseek-key
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-v4-flash
 ```
 
-Never prefix the Supabase secret, researcher password, or session secrets with `NEXT_PUBLIC_`. A deployment without Supabase does not silently fall back to an ephemeral production file; configure Supabase explicitly so results survive restarts and scaling.
+Prefer the current `sb_secret_...` Supabase Secret Key. The server also accepts `SUPABASE_SERVICE_ROLE_KEY` containing a legacy `service_role` JWT for older projects. It rejects publishable keys, anon JWTs, malformed URLs, and partial configuration. A new Secret Key is sent only through the `apikey` header; only a legacy `service_role` JWT receives an additional Bearer header.
+
+Never prefix the Supabase secret, researcher password, or session secrets with `NEXT_PUBLIC_`. Production never imports the local file adapter as a persistence fallback and never writes to an ephemeral Vercel filesystem. After changing Vercel environment variables, create a new Production deployment, then verify:
+
+1. `GET /api/results` returns `200` with `storage: "supabase"`.
+2. An unauthenticated `GET /api/research/results` returns `401`.
+3. `/admin` login succeeds and identifies `supabase` storage.
+4. A participant run creates a started row, persists sequenced events, and finishes with `status = completed` and a non-null `completed_at`.
+5. The admin detail and full export contain the same event count as Supabase. Full export is paginated and is not limited to PostgREST's default first 1000 rows.
+
+The migrations enable RLS, grant no browser role access, and give `service_role` only `SELECT/INSERT/UPDATE` on participant snapshots and `SELECT/INSERT` on events. Run Supabase Security Advisor after applying them. Generate the two HMAC secrets independently, for example by running `openssl rand -base64 48` twice.
 
 Use `npm run sites:build` to produce the edge-deployable bundle in `dist/`.

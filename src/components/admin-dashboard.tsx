@@ -38,7 +38,7 @@ type ResultEvent = {
   client_timestamp: string;
 };
 
-type AccessState = "loading" | "login" | "ready" | "unavailable";
+type AccessState = "loading" | "login" | "ready" | "unavailable" | "backend-error";
 
 function formatTime(value: string | null) {
   if (!value) return "—";
@@ -53,6 +53,7 @@ export function AdminDashboard() {
   const [access, setAccess] = useState<AccessState>("loading");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [errorCode, setErrorCode] = useState("");
   const [storageMode, setStorageMode] = useState("");
   const [results, setResults] = useState<ResultSummary[]>([]);
   const [selected, setSelected] = useState("");
@@ -60,10 +61,23 @@ export function AdminDashboard() {
   const [events, setEvents] = useState<ResultEvent[]>([]);
 
   const loadResults = useCallback(async () => {
+    setError("");
+    setErrorCode("");
     const response = await fetch("/api/research/results", { cache: "no-store" });
     if (response.status === 401) { setAccess("login"); return; }
-    if (response.status === 503) { setAccess("unavailable"); return; }
-    if (!response.ok) { setError("无法读取研究结果，请稍后重试。"); setAccess("login"); return; }
+    if (response.status === 503) {
+      const body = await response.json().catch(() => ({})) as { code?: string };
+      setErrorCode(body.code || "RESULT_STORAGE_UNAVAILABLE");
+      setAccess("unavailable");
+      return;
+    }
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({})) as { code?: string };
+      setErrorCode(body.code || "RESULT_STORAGE_BACKEND_ERROR");
+      setError("后端连接失败，请检查 Supabase 密钥、迁移和表权限后重试。");
+      setAccess("backend-error");
+      return;
+    }
     const body = await response.json() as { mode?: string; results?: ResultSummary[] };
     const nextResults = body.results || [];
     setStorageMode(body.mode || "");
@@ -136,12 +150,22 @@ export function AdminDashboard() {
 
   if (access === "loading") return <div className="grid min-h-screen place-items-center bg-[#f7f6f2] text-sm text-muted-foreground">正在验证研究者身份…</div>;
 
-  if (access === "login" || access === "unavailable") return <div className="grid min-h-screen place-items-center bg-[#f7f6f2] p-8">
+  if (access === "unavailable" || access === "backend-error") return <div className="grid min-h-screen place-items-center bg-[#f7f6f2] p-8">
+    <div className="w-full max-w-md rounded-2xl border bg-white p-8 text-center shadow-[0_18px_60px_rgba(35,40,65,.08)]">
+      <div className="mx-auto grid size-12 place-items-center rounded-xl bg-amber-100 text-amber-700"><WarningCircle size={25}/></div>
+      <h1 className="mt-5 text-2xl font-semibold">{access==="unavailable"?"后台配置未完成":"后端连接失败"}</h1>
+      <p className="mt-3 text-sm leading-6 text-muted-foreground">{access==="unavailable"?"请检查 Vercel Production 的结果存储和研究者认证环境变量，并在修改后重新部署。":"请检查 Supabase 项目状态、密钥类型、数据库迁移和 service_role 权限。详细原因已写入 Vercel server logs。"}</p>
+      <code className="mt-4 inline-block rounded bg-muted px-3 py-2 text-xs">{errorCode||"RESULT_STORAGE_UNAVAILABLE"}</code>
+      <div className="mt-6 flex justify-center gap-2"><Button onClick={()=>void loadResults()}>重试</Button><Button variant="outline" onClick={logout}>退出登录</Button></div>
+      <Link href="/" className="mt-5 flex items-center justify-center gap-2 text-xs text-muted-foreground hover:text-foreground"><ArrowLeft/>返回实验入口</Link>
+    </div>
+  </div>;
+
+  if (access === "login") return <div className="grid min-h-screen place-items-center bg-[#f7f6f2] p-8">
     <form onSubmit={login} className="w-full max-w-md rounded-2xl border bg-white p-8 shadow-[0_18px_60px_rgba(35,40,65,.08)]">
       <div className="mx-auto grid size-12 place-items-center rounded-xl bg-secondary text-primary"><LockKey size={25}/></div>
       <h1 className="mt-5 text-center text-2xl font-semibold">研究者后台</h1>
       <p className="mt-2 text-center text-sm leading-6 text-muted-foreground">此页面不向被试开放。请输入研究者密码继续。</p>
-      {access === "unavailable" && <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">尚未配置结果存储或研究者认证环境变量。</div>}
       <label className="mt-6 block text-sm font-medium" htmlFor="researcher-password">研究者密码</label>
       <input id="researcher-password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} className="mt-2 h-11 w-full rounded-lg border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-primary/25" />
       {error && <p className="mt-3 text-sm text-destructive">{error}</p>}

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readAllResults, resultStorageMode } from "@/lib/result-store";
+import { listParticipantResults, readAllResults, readParticipantResult, ResultStorageError, resultStorageMode } from "@/lib/result-store";
 import { ADMIN_COOKIE, getResearcherAuthConfig } from "@/lib/results-server";
 import { verifySignedToken } from "@/lib/signed-token";
 
@@ -12,14 +12,13 @@ async function isAuthorized(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  if (!getResearcherAuthConfig() || !resultStorageMode()) {
-    return NextResponse.json({ mode: "unavailable", error: "Research result storage is not configured" }, { status: 503 });
-  }
+  if (!getResearcherAuthConfig()) return NextResponse.json({ mode: "unavailable", code: "RESEARCHER_AUTH_UNAVAILABLE" }, { status: 503 });
   if (!await isAuthorized(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!resultStorageMode()) return NextResponse.json({ mode: "unavailable", code: "RESULT_STORAGE_UNAVAILABLE" }, { status: 503 });
 
   try {
-    const database = await readAllResults();
     if (request.nextUrl.searchParams.get("export") === "1") {
+      const database = await readAllResults();
       return NextResponse.json({
         schemaVersion: "rmw-research-results-v2",
         storageMode: resultStorageMode(),
@@ -31,7 +30,8 @@ export async function GET(request: NextRequest) {
 
     const participantCode = request.nextUrl.searchParams.get("participantCode");
     if (participantCode) {
-      const result = database.results.find((candidate) => candidate.participant_code === participantCode);
+      const database = await readParticipantResult(participantCode);
+      const result = database.results[0];
       if (!result) return NextResponse.json({ error: "Participant not found" }, { status: 404 });
       const events = database.events
         .filter((event) => event.participant_code === participantCode)
@@ -39,14 +39,20 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ mode: resultStorageMode(), result, events });
     }
 
-    const results = database.results
+    const results = (await listParticipantResults())
       .map(({ participant_code, locale, condition, task_id, status, consented_at, completed_at, created_at, updated_at }) => ({
         participant_code, locale, condition, task_id, status, consented_at, completed_at, created_at, updated_at,
       }))
       .sort((left, right) => right.created_at.localeCompare(left.created_at));
     return NextResponse.json({ mode: resultStorageMode(), results });
   } catch (error) {
-    console.error("Research result read failed", { storageMode: resultStorageMode(), error });
-    return NextResponse.json({ error: "Could not load research results" }, { status: 502 });
+    const storageError = error instanceof ResultStorageError ? error : null;
+    console.error("Research result read failed", {
+      storageMode: resultStorageMode(),
+      code: storageError?.code || "UNEXPECTED_ERROR",
+      details: storageError?.details,
+      error: storageError ? undefined : error,
+    });
+    return NextResponse.json({ mode: "unavailable", code: "RESULT_STORAGE_BACKEND_ERROR" }, { status: 502 });
   }
 }
