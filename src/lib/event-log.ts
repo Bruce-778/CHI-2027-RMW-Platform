@@ -1,3 +1,5 @@
+import { syncRemoteEvent } from "./remote-results";
+
 export interface StudyEvent {
   id: string;
   type: string;
@@ -99,6 +101,7 @@ export function eventLog(
     at: new Date().toISOString(),
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify([...current, item].slice(-1000)));
+  syncRemoteEvent(item as unknown as Record<string, unknown>);
 }
 
 export function exportStudyEvents() {

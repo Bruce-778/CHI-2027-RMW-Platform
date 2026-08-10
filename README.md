@@ -62,7 +62,19 @@ For local review, test mode is the default and bypasses the Phase 1 and checkpoi
 
 The DeepSeek tutor uses a conversational research-partner prompt: it responds to the participant's current intent, uses ordinary short paragraphs, structures only when useful, cites materials for consequential claims, and preserves uncertainty without forcing fixed labels or a repeated answer template. The extraction prompt separately produces the bounded reasoning-card set and relations for the knowledge network from the same trace.
 
-The researcher console can export the local demo event stream as JSON. The production schema in `supabase/migrations/202607140001_initial_schema.sql` includes server-mediated sessions, extraction runs, cards, sources, relations, recovery artifacts, recall responses, and sequenced events.
+The password-protected researcher console at `/admin` reads centrally stored participant results and exports them as JSON. Participant pages save pre-survey responses, the current memo and chat, calibrated Problem State, unsupported recall, recovery-state revisions, completion status, and the interaction event stream through server-only routes. The browser never receives the Supabase secret key or researcher password.
+
+To enable central result collection, apply both migrations in `supabase/migrations/`, then configure these server-side values:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SECRET_KEY=your-service-role-or-secret-key
+PARTICIPANT_SESSION_SECRET=a-long-random-secret
+RESEARCHER_ADMIN_PASSWORD=a-strong-researcher-password
+RESEARCHER_SESSION_SECRET=a-different-long-random-secret
+```
+
+If central storage is unavailable, the participant flow continues and retains its existing browser-local event copy. The researcher console never substitutes demo participants for missing production data.
 
 Use `pnpm sites:build` to produce the edge-deployable bundle in `dist/`.
 

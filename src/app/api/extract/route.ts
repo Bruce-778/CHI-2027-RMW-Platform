@@ -85,7 +85,13 @@ function validateExtraction(content: string | null) {
     if (result.success) return { success: true as const, data: result.data };
     return {
       success: false as const,
-      issues: result.error.issues.map((issue) => `${issue.path.join(".") || "root"}:${issue.code}`).slice(0, 12),
+      issues: result.error.issues.map((issue) => {
+        const path = issue.path.join(".") || "root";
+        if (path === "cards" && issue.code === "too_big") return "cards must contain no more than 12 items";
+        if (path === "cards" && issue.code === "too_small") return "cards must contain at least 2 items";
+        if (path === "relations" && issue.code === "too_big") return "relations must contain no more than 20 items";
+        return `${path}:${issue.code}`;
+      }).slice(0, 12),
     };
   } catch {
     return { success: false as const, issues: ["invalid_json"] };
@@ -162,6 +168,7 @@ Rules:
 - The task question provides context for the main goal only. Do not add evidence, constraints, hypotheses, or conclusions that appear only in the task materials.
 - Never use or infer a hidden answer key. Do not label any framing as the strongest or correct one.
 - Include exactly one main goal. Add only the subgoals, hypotheses, evidence, constraints, suspended goals, rejected paths, and next action that the participant trace supports.
+- Return 4 to 10 cards when the participant trace supports them, and never return more than 12 cards. Prefer fewer, non-duplicative cards over splitting one idea into several cards.
 - Never create placeholder cards such as "not reliably identified" merely to fill a category. Omit unsupported categories instead.
 - Use goalLevel only for kind "goal"; omit goalLevel from all other card kinds.
 - Every card must include id, kind, content, detail, status, priority, confidence, source, and why. Every relation must include confidence.
@@ -223,7 +230,7 @@ ${actionTrace || "(empty)"}`;
     if (!extraction.success) {
       console.warn("Problem State extraction retry", { finishReason: first.finishReason, issues: extraction.issues });
       const repairPrompt = `The previous JSON output did not satisfy the required shape. Validation issues: ${extraction.issues.join(", ")}.
-Return one corrected JSON object only. Preserve only participant-supported content. Do not add placeholder cards.`;
+Return one corrected JSON object only. The cards array must contain 2 to 12 cards; aim for 4 to 10 concise, non-duplicative cards. The relations array must contain at most 20 relations and may be empty. Preserve only participant-supported content. Do not add placeholder cards.`;
       const repairMessages: ProviderMessage[] = first.content
         ? [...baseMessages, { role: "assistant", content: first.content }, { role: "user", content: repairPrompt }]
         : [...baseMessages, { role: "user", content: repairPrompt }];
@@ -241,7 +248,7 @@ Return one corrected JSON object only. Preserve only participant-supported conte
       const semanticRepair = await requestCompletion([
         ...baseMessages,
         { role: "assistant", content: acceptedContent || "{}" },
-        { role: "user", content: "Return corrected JSON. Remove assistant-only suggestions and duplicate cards. Include exactly one participant-supported main goal and at least one additional participant-supported card." },
+        { role: "user", content: "Return corrected JSON with 2 to 12 cards; aim for 4 to 10 concise, non-duplicative cards. Remove assistant-only suggestions and duplicate cards. Include exactly one participant-supported main goal and at least one additional participant-supported card." },
       ]);
       const repairedState = validateExtraction(semanticRepair.content);
       participantState = repairedState.success ? sanitizeExtraction(repairedState.data, messages) : null;
@@ -252,7 +259,7 @@ Return one corrected JSON object only. Preserve only participant-supported conte
       mode: "live",
       provider: "deepseek",
       model,
-      promptVersion: "rmw_state_and_network_extraction_v5_participant_grounded",
+      promptVersion: "rmw_state_and_network_extraction_v6_bounded_cards",
       cards: participantState.cards,
       relations: participantState.relations,
     });

@@ -15,6 +15,11 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { eventLog, getOrCreateParticipantId } from "@/lib/event-log";
 import {
+  completeRemoteStudy,
+  saveRemoteStudySnapshot,
+  startRemoteStudySession,
+} from "@/lib/remote-results";
+import {
   readProblemStateSnapshot,
   saveProblemStateSnapshot,
   toCardRelations,
@@ -92,6 +97,7 @@ export function RmwApp() {
   const [testMode, setTestMode] = useState(true);
   const [participantId, setParticipantId] = useState("");
   const [problemState, setProblemState] = useState<ProblemStateSnapshot | null>(() => readProblemStateSnapshot());
+  const completionSubmittedRef = useRef(false);
   const t = copy[locale];
 
   useEffect(() => {
@@ -114,14 +120,23 @@ export function RmwApp() {
     return () => cancelAnimationFrame(frame);
   }, []);
 
+  useEffect(() => {
+    if (screen !== "complete" || completionSubmittedRef.current) return;
+    completionSubmittedRef.current = true;
+    completeRemoteStudy({ memo, chat, problemState });
+  }, [chat, memo, problemState, screen]);
+
   return (
     <>
       <div className="desktop-required fixed inset-0 z-50 hidden items-center justify-center bg-[#f7f6f2] p-8 text-center">
         <div className="max-w-md"><SquaresFour size={42} className="mx-auto mb-5 text-primary" /><h1 className="text-2xl font-semibold">{t.desktop}</h1><p className="mt-3 text-muted-foreground">{t.desktopText}</p></div>
       </div>
       <main className="desktop-app min-h-screen">
-        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantId={participantId} onStart={() => {
+        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantId={participantId} onStart={async () => {
           const task = getResearchTask("waste");
+          await startRemoteStudySession({ participantCode: participantId, locale, condition, taskId: "waste" });
+          eventLog("consent_submitted", { locale, access: "anonymous", participantId }, { stage: "consent" });
+          completionSubmittedRef.current = false;
           setMemo(task.starterMemo[locale]);
           setChat([{ role: "assistant", text: task.assistantIntro[locale] }]);
           setProblemState(null);
@@ -132,7 +147,7 @@ export function RmwApp() {
         {screen === "brief" && <TaskBrief locale={locale} taskId={taskId} setScreen={setScreen} />}
         {screen === "survey" && <Survey locale={locale} taskId={taskId} setScreen={setScreen} t={t} />}
         {screen === "work" && <Workspace key={`work-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="work" problemState={problemState} memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} t={t} />}
-        {screen === "checkpoint" && <RmwCheckpoint locale={locale} taskId={taskId} memo={memo} messages={chat} testMode={testMode} onBack={() => setScreen("work")} onContinue={(snapshot) => { if (snapshot) { setProblemState(snapshot); saveProblemStateSnapshot(snapshot); } setScreen("interruption"); }} />}
+        {screen === "checkpoint" && <RmwCheckpoint locale={locale} taskId={taskId} memo={memo} messages={chat} testMode={testMode} onBack={() => setScreen("work")} onContinue={(snapshot) => { if (snapshot) { setProblemState(snapshot); saveProblemStateSnapshot(snapshot); saveRemoteStudySnapshot({ memo, chat, problemState: snapshot }); } setScreen("interruption"); }} />}
         {screen === "interruption" && <InterruptionTask locale={locale} fastMode={testMode} onComplete={() => setScreen("recall")} />}
         {screen === "recall" && <Recall locale={locale} setScreen={setScreen} t={t} />}
         {screen === "workspace" && <Workspace key={`recovery-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="recovery" problemState={problemState} memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} t={t} />}
@@ -158,10 +173,10 @@ function Landing({
   locale: Locale;
   setLocale: (l: Locale) => void;
   participantId: string;
-  onStart: () => void;
+  onStart: () => Promise<void>;
   t: typeof copy[Locale];
 }) {
-  const [consent, setConsent] = useState(true);
+  const [consent, setConsent] = useState(false);
   return <div className="min-h-screen bg-[#f8f7f3]">
     <header className="mx-auto flex h-20 max-w-6xl items-center justify-between px-8"><Brand /><LanguageChoice locale={locale} setLocale={setLocale} /></header>
     <section className="mx-auto grid max-w-6xl grid-cols-[1.08fr_.92fr] items-center gap-16 px-8 py-20">
@@ -171,7 +186,7 @@ function Landing({
         <div id="anonymous-id" className="mt-3 rounded-xl border bg-muted/35 px-4 py-3 font-mono text-base font-semibold tracking-wider text-primary">{participantId || (locale==="zh-CN"?"正在生成…":"Generating…")}</div>
         <p className="mt-2 text-xs text-muted-foreground">{locale==="zh-CN"?"编号由系统自动生成，无需填写。":"Generated automatically; no entry is required."}</p>
         <label className="mt-7 flex cursor-pointer items-start gap-3 text-sm leading-6"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} className="mt-1 size-4 accent-[var(--primary)]"/><span>{t.consent}</span></label>
-        <TimedButton seconds={5} ready={consent&&Boolean(participantId)} locale={locale} label={t.enter} blockedLabel={locale==="zh-CN"?"请勾选同意":"Provide consent to continue"} onClick={()=>{eventLog("consent_submitted",{locale,access:"anonymous",participantId});onStart()}} className="mt-7 h-12 w-full" />
+        <TimedButton seconds={5} ready={consent&&Boolean(participantId)} locale={locale} label={t.enter} blockedLabel={locale==="zh-CN"?"请勾选同意":"Provide consent to continue"} onClick={onStart} className="mt-7 h-12 w-full" />
         <p className="mt-3 text-center text-[11px] text-muted-foreground">{locale==="zh-CN"?"按钮将在阅读时间结束且信息完整后开放。":"The button unlocks after the reading time and required fields are complete."}</p>
       </div>
     </section>
@@ -226,8 +241,8 @@ function Survey({ locale, taskId, setScreen, t }: { locale:Locale;taskId:Researc
   const groups:SurveyGroup[] = locale === "zh-CN" ? [
     {
       id:"ai_use_experience",
-      title:"测量目标 1 · AI 使用经历",
-      instruction:"请根据过去 3 个月的实际使用情况作答。本部分记录使用经历，不计算“AI 素养总分”。",
+      title:"第 1 部分",
+      instruction:"请根据过去 3 个月的实际使用情况作答。",
       source:"研究者编制的事实型协变量题项；时间窗口统一为过去 3 个月，不属于标准化心理量表。",
       items:[
         {id:"ai_use_frequency",text:"过去 3 个月，你通常多频繁使用生成式 AI 工具（如 DeepSeek、ChatGPT、文心一言或通义千问）？",anchors:["从未","少于每周 1 次","每周 1–2 次","每周 3–4 次","每周 5 天及以上"]},
@@ -238,8 +253,8 @@ function Survey({ locale, taskId, setScreen, t }: { locale:Locale;taskId:Researc
     },
     {
       id:"ails_ccs",
-      title:"测量目标 2 · AI 素养",
-      instruction:"以下 15 题采用 5 点同意度作答，分别测量 AI 认知、使用、评价与伦理意识。",
+      title:"第 2 部分",
+      instruction:"请根据每句话与你实际情况的符合程度作答。",
       source:"来源：Ma, S., & Chen, Z. (2024), Artificial Intelligence Literacy Scale for Chinese College Students（AILS-CCS）, IEEE Access, 12, 146419–146429。保留原量表 15 题、四维度和 5 点结构；当前中文措辞为本研究工作译本，正式实验前仍需与作者版本核对并进行预测试。",
       sourceUrl:"https://doi.org/10.1109/ACCESS.2024.3468378",
       sourceLabel:"DOI: 10.1109/ACCESS.2024.3468378",
@@ -263,8 +278,8 @@ function Survey({ locale, taskId, setScreen, t }: { locale:Locale;taskId:Researc
     },
     {
       id:"research_baseline",
-      title:"测量目标 3 · 研究任务基线",
-      instruction:"本目标分别记录研究任务自我效能和垃圾分类议题的先验熟悉度；两个分量不合并计分。",
+      title:"第 3 部分",
+      instruction:"请根据你目前的真实感受和已有经验作答。",
       source:"“研究任务自我效能”题项依据 RSES 的问题概念化维度进行任务化改编（Bieschke, Bishop, & Garcia, 1996）；“议题熟悉度”为研究者编制的协变量题项。二者均不按原量表总分计分。",
       sourceUrl:"https://doi.org/10.1177/106907279600400104",
       sourceLabel:"RSES 参考文献",
@@ -281,8 +296,8 @@ function Survey({ locale, taskId, setScreen, t }: { locale:Locale;taskId:Researc
   ] : [
     {
       id:"ai_use_experience",
-      title:"Goal 1 · Prior AI-use experience",
-      instruction:"Answer based on your actual use during the past three months. These items describe experience and do not form an AI-literacy score.",
+      title:"Part 1",
+      instruction:"Answer based on your actual use during the past three months.",
       source:"Researcher-authored factual covariates using a consistent three-month reference period; this is not a standardized psychological scale.",
       items:[
         {id:"ai_use_frequency",text:"During the past three months, how often did you typically use generative-AI tools such as DeepSeek, ChatGPT, ERNIE Bot, or Qwen?",anchors:["Never","Less than weekly","1–2 times a week","3–4 times a week","5+ days a week"]},
@@ -293,8 +308,8 @@ function Survey({ locale, taskId, setScreen, t }: { locale:Locale;taskId:Researc
     },
     {
       id:"ails_ccs",
-      title:"Goal 2 · AI literacy",
-      instruction:"These 15 items use five-point agreement responses across awareness, usage, evaluation, and ethics.",
+      title:"Part 2",
+      instruction:"Answer according to how closely each statement matches your actual situation.",
       source:"Source: Ma, S., & Chen, Z. (2024), Artificial Intelligence Literacy Scale for Chinese College Students (AILS-CCS), IEEE Access, 12, 146419–146429. This page retains the 15-item, four-dimension, five-point structure.",
       sourceUrl:"https://doi.org/10.1109/ACCESS.2024.3468378",
       sourceLabel:"DOI: 10.1109/ACCESS.2024.3468378",
@@ -318,8 +333,8 @@ function Survey({ locale, taskId, setScreen, t }: { locale:Locale;taskId:Researc
     },
     {
       id:"research_baseline",
-      title:"Goal 3 · Research-task baseline",
-      instruction:"This goal records research-task self-efficacy and prior topic familiarity as separate covariates; their scores are not combined.",
+      title:"Part 3",
+      instruction:"Answer based on your current feelings and prior experience.",
       source:"Research-task self-efficacy items are task-specific adaptations informed by the RSES conceptualization dimension (Bieschke, Bishop, & Garcia, 1996). Topic-familiarity items are researcher-authored covariates; neither is scored as an original standardized scale.",
       sourceUrl:"https://doi.org/10.1177/106907279600400104",
       sourceLabel:"RSES reference",
@@ -338,16 +353,14 @@ function Survey({ locale, taskId, setScreen, t }: { locale:Locale;taskId:Researc
   const [responses,setResponses]=useState<Record<string,number>>({});
   const complete=flatItems.every(item=>responses[item.id]);
   return <CenteredShell title={t.pretitle}>
-    <p className="mb-7 text-sm leading-6 text-muted-foreground">{locale==="zh-CN"?"本页包含 3 个测量目标，共 26 个评价点。请根据真实情况作答；所有题目均使用可点击的 5 点选项。":"This page contains three measurement goals and 26 items. Answer based on your actual situation using the clickable five-point options."}</p>
+    <p className="mb-7 text-sm leading-6 text-muted-foreground">{locale==="zh-CN"?"本页共 26 道题。请根据真实情况作答，每题选择一个最符合你的选项。":"This page contains 26 questions. Answer based on your actual situation and select the option that fits you best."}</p>
     <div className="space-y-8">
       {groups.map(group=><section key={group.id} className="rounded-xl border bg-[#fcfcfd] p-5">
         <h2 className="font-semibold">{group.title}</h2>
         <p className="mt-1 text-xs text-muted-foreground">{group.instruction}</p>
         <div className="mt-5 space-y-6">
           {group.items.map((item,itemIndex)=>{
-            const showSubscale=Boolean(item.subscale)&&(itemIndex===0||group.items[itemIndex-1]?.subscale!==item.subscale);
-            return <fieldset key={item.id} className={showSubscale&&itemIndex>0?"border-t pt-5":""}>
-              {showSubscale&&<Badge variant="secondary" className="mb-3 rounded-full text-[10px]">{item.subscale}</Badge>}
+            return <fieldset key={item.id}>
               <legend className="text-sm font-medium leading-6">{itemIndex+1}. {item.text}</legend>
               <div className="mt-3 grid grid-cols-5 gap-2">
                 {item.anchors.map((anchor,index)=>{
@@ -359,10 +372,9 @@ function Survey({ locale, taskId, setScreen, t }: { locale:Locale;taskId:Researc
             </fieldset>;
           })}
         </div>
-        <p className="mt-5 border-t pt-3 text-[10px] leading-5 text-muted-foreground">{group.source}{group.sourceUrl&&<>{" "}<a href={group.sourceUrl} target="_blank" rel="noreferrer" className="font-medium text-primary underline underline-offset-2">{group.sourceLabel}</a></>}</p>
       </section>)}
     </div>
-    <TimedButton seconds={8} ready={complete} locale={locale} label={t.next} blockedLabel={locale==="zh-CN"?"请完成全部评价点":"Answer every item"} onClick={()=>{eventLog("pre_survey_completed",{taskId,responses,constructs:groups.map(group=>group.id),aiLiteracyScale:"AILS-CCS_15-item_5-point"},{stage:"pre_survey"});setScreen("work")}} className="mt-10 h-12 w-full" />
+    <TimedButton seconds={8} ready={complete} locale={locale} label={t.next} blockedLabel={locale==="zh-CN"?"请完成全部题目":"Answer every question"} onClick={()=>{eventLog("pre_survey_completed",{taskId,responses,constructs:groups.map(group=>group.id),aiLiteracyScale:"AILS-CCS_15-item_5-point"},{stage:"pre_survey"});saveRemoteStudySnapshot({preSurvey:responses});setScreen("work")}} className="mt-10 h-12 w-full" />
   </CenteredShell>;
 }
 
@@ -420,6 +432,9 @@ function Recall({ locale,setScreen,t }: {locale:Locale;setScreen:(s:Screen)=>voi
               uncertain:responses[2],
             },
           },{stage:"unsupported_recall"});
+          saveRemoteStudySnapshot({
+            recall:{currentGoal:responses[0],position:responses[1],uncertain:responses[2]},
+          });
           eventLog("recovery_support_revealed",{}, {stage:"recovery"});
           setScreen("workspace");
         }}
@@ -590,6 +605,19 @@ function Workspace({
   const timerText=`${String(Math.floor(remainingSeconds/60)).padStart(2,"0")}:${String(remainingSeconds%60).padStart(2,"0")}`;
 
   useEffect(()=>{
+    const timeout=window.setTimeout(()=>saveRemoteStudySnapshot({memo,chat}),700);
+    return()=>window.clearTimeout(timeout);
+  },[chat,memo]);
+
+  useEffect(()=>{
+    if(phase!=="recovery")return;
+    const timeout=window.setTimeout(()=>saveRemoteStudySnapshot({
+      recoveryState:{cards,relations:recoveryRelations},
+    }),700);
+    return()=>window.clearTimeout(timeout);
+  },[cards,phase,recoveryRelations]);
+
+  useEffect(()=>{
     if(countdownEndRef.current===null)countdownEndRef.current=Date.now()+600_000;
     const updateTimer=()=>{
       const next=Math.max(0,Math.ceil(((countdownEndRef.current??Date.now())-Date.now())/1000));
@@ -704,7 +732,7 @@ function Workspace({
       >
         <span className="h-12 w-1 rounded-full bg-border transition group-hover:bg-primary/45"/>
       </button>
-      <MemoPanel locale={locale} memo={memo} setMemo={setMemo} t={t}/>
+      <MemoPanel locale={locale} taskId={taskId} memo={memo} setMemo={setMemo} t={t}/>
       <button
         type="button"
         aria-label={locale==="zh-CN"?"左右拖动，调整工作区与右侧窗口宽度":"Drag horizontally to resize workspace and right-hand panels"}
@@ -778,8 +806,10 @@ function ChatPanel({locale,chat,message,setMessage,send,isLoading,error,t}:{loca
   </section>;
 }
 
-function MemoPanel({locale,memo,setMemo,t}:{locale:Locale;memo:string;setMemo:(s:string)=>void;t:typeof copy[Locale]}) {
-  const count=locale==="zh-CN"?memo.replace(/\s/g,"").length:(memo.trim()?memo.trim().split(/\s+/).length:0);
+function MemoPanel({locale,taskId,memo,setMemo,t}:{locale:Locale;taskId:ResearchTaskId;memo:string;setMemo:(s:string)=>void;t:typeof copy[Locale]}) {
+  const starterMemo=getResearchTask(taskId).starterMemo[locale];
+  const wordCount=(text:string)=>locale==="zh-CN"?text.replace(/\s/g,"").length:(text.trim()?text.trim().split(/\s+/).length:0);
+  const count=Math.max(0,wordCount(memo)-wordCount(starterMemo));
   return <section data-tour="memo" className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-white">
     <div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><NotePencil size={20}/>{t.memo}</h2><span className="flex items-center gap-2 text-xs text-muted-foreground"><Check size={15}/>{t.saved} · {locale==="zh-CN"?"目标 600–900 字":"Target 600–900 words"}</span></div>
     <div className="relative min-h-0 flex-1 px-6 py-5"><Textarea value={memo} onChange={event=>{const next=event.target.value;const nextCount=locale==="zh-CN"?next.replace(/\s/g,"").length:(next.trim()?next.trim().split(/\s+/).length:0);setMemo(next);eventLog("memo_edited",{count:nextCount},{stage:"research_work",targetType:"memo"})}} className="panel-scroll h-full resize-none overflow-y-auto border-0 p-0 pb-8 text-[15px] leading-7 shadow-none focus-visible:ring-0" placeholder={t.memoPlaceholder}/><div className="pointer-events-none absolute bottom-4 right-6 rounded-md bg-white/90 px-2 py-1 text-right font-mono text-[10px] text-muted-foreground">{count} {t.words} · 600–900</div></div>
@@ -799,7 +829,8 @@ function PhaseOnePanel({locale,taskId,memo,remaining,testMode,setScreen}:{locale
   });
   const completedGoalCount=phaseOneGoals.filter(goal=>goal.criteria.every((_,index)=>completed.has(criterionId(goal.id,index)))).length;
   const totalCriteria=phaseOneGoals.reduce((total,goal)=>total+goal.criteria.length,0);
-  const memoCount=locale==="zh-CN"?memo.replace(/\s/g,"").length:(memo.trim()?memo.trim().split(/\s+/).length:0);
+  const wordCount=(text:string)=>locale==="zh-CN"?text.replace(/\s/g,"").length:(text.trim()?text.trim().split(/\s+/).length:0);
+  const memoCount=Math.max(0,wordCount(memo)-wordCount(task.starterMemo[locale]));
   const checkpointReady=testMode||remaining<=180;
   return <section data-tour="goals" className="flex min-h-0 flex-col bg-[#fbfcfe]">
     <div className="flex h-14 shrink-0 items-center justify-between border-b px-5"><h2 className="flex items-center gap-2 font-semibold"><Target size={20} className="text-primary"/>{locale==="zh-CN"?"第一阶段目标":"Phase 1 goals"}</h2><Badge variant="outline" className="bg-white text-[10px]">{completedGoalCount} / {phaseOneGoals.length} {locale==="zh-CN"?"个目标":"goals"}</Badge></div>
@@ -879,7 +910,19 @@ function ReasoningCardView({card,locale,selected,onSelect,updateStatus,t}:{card:
 type FlowData={ label:string; status:EpistemicStatus; selected:boolean };
 function FlowNode({data}:{data:FlowData}) { const colors=data.status==="active"?"border-emerald-400 bg-emerald-50":data.status==="uncertain"?"border-amber-400 bg-amber-50":"border-slate-300 bg-slate-50"; return <div className={`w-[118px] rounded-lg border-2 px-3 py-2 text-center text-[10px] font-medium leading-4 shadow-sm ${colors} ${data.selected?"ring-4 ring-indigo-100":""}`}><Handle type="target" position={Position.Left}/>{data.label}<Handle type="source" position={Position.Right}/></div> }
 const nodeTypes={reason:FlowNode};
-function computeFlowPositions(cards:ReasoningCard[]) { const positions:Record<string,{x:number;y:number}>={}; const rows=[cards.filter(card=>card.goalLevel==="main"),cards.filter(card=>card.goalLevel==="subgoal"),cards.filter(card=>card.goalLevel==="suspended"),cards.filter(card=>!card.goalLevel)]; rows.forEach((row,rowIndex)=>row.forEach((card,columnIndex)=>{positions[card.id]={x:40+columnIndex*175,y:20+rowIndex*120}})); return positions; }
+function computeFlowPositions(cards: ReasoningCard[]): Record<string, { x: number; y: number }> {
+  const result: Record<string, { x: number; y: number }> = {};
+  const groups = [
+    cards.filter((c) => c.goalLevel === "main"),
+    cards.filter((c) => c.goalLevel === "subgoal"),
+    cards.filter((c) => c.goalLevel === "suspended"),
+    cards.filter((c) => !c.goalLevel),
+  ];
+  groups.forEach((group, row) => group.forEach((card, col) => {
+    result[card.id] = { x: 60 + col * 190, y: 20 + row * 105 };
+  }));
+  return result;
+}
 function KnowledgeNetwork({locale,cards,relations,selected,setSelected,compact=false}:{locale:Locale;cards:ReasoningCard[];relations:CardRelation[];selected:string;setSelected:(s:string)=>void;compact?:boolean}) { const positions=useMemo(()=>computeFlowPositions(cards),[cards]); const nodes=useMemo<Node<FlowData>[]>(()=>cards.map(c=>({id:c.id,type:"reason",position:positions[c.id]||{x:0,y:0},data:{label:c.content[locale],status:c.status,selected:c.id===selected}})),[cards,locale,positions,selected]); const edges=useMemo<Edge[]>(()=>relations.map(r=>({id:r.id,source:r.sourceCardId,target:r.targetCardId,label:compact?undefined:r.relationType,animated:r.relationType==="leads_to",style:{stroke:r.relationType==="challenges"?"#c58a2c":"#8a93a5"},labelStyle:{fontSize:9,fill:"#6b7280"}})),[compact,relations]); return <div className="h-full min-h-0 bg-[#fcfcfd]"><ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView minZoom={.45} maxZoom={1.4} onNodeClick={(_,n)=>{setSelected(n.id);eventLog("network_node_clicked",{id:n.id})}}><Background gap={22} size={1} color="#e8eaf0"/>{!compact&&<Controls position="bottom-right" showInteractive={false}/>}</ReactFlow></div> }
 
 function PrimaryContinue({locale,setScreen,t}:{locale:Locale;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) { return <div className="shrink-0 border-t bg-white px-5 py-3"><TimedButton seconds={5} locale={locale} label={t.endStudy} className="h-11 w-full text-sm" onClick={()=>{eventLog("end_study_clicked",{},{stage:"recovery"});setScreen("complete")}} /></div> }
