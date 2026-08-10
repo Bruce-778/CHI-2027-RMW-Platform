@@ -58,11 +58,17 @@ const extractionSchema = z.object({
   });
 });
 
+type Extraction = z.infer<typeof extractionSchema>;
+type ParticipantMessage = { role: "user" | "assistant"; text: string };
+
 const completionSchema = z.object({
   choices: z.array(z.object({
     message: z.object({ content: z.string().nullable() }),
+    finish_reason: z.string().nullable().optional(),
   })).min(1),
 });
+
+type ProviderMessage = { role: "system" | "user" | "assistant"; content: string };
 
 function parseJsonObject(content: string): unknown {
   const unfenced = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
@@ -70,6 +76,47 @@ function parseJsonObject(content: string): unknown {
   const end = unfenced.lastIndexOf("}");
   if (start < 0 || end <= start) throw new Error("No JSON object");
   return JSON.parse(unfenced.slice(start, end + 1));
+}
+
+function validateExtraction(content: string | null) {
+  if (!content) return { success: false as const, issues: ["empty_content"] };
+  try {
+    const result = extractionSchema.safeParse(parseJsonObject(content));
+    if (result.success) return { success: true as const, data: result.data };
+    return {
+      success: false as const,
+      issues: result.error.issues.map((issue) => `${issue.path.join(".") || "root"}:${issue.code}`).slice(0, 12),
+    };
+  } catch {
+    return { success: false as const, issues: ["invalid_json"] };
+  }
+}
+
+function sanitizeExtraction(extraction: Extraction, messages: ParticipantMessage[]): Extraction | null {
+  const assistantTurns = new Set(messages.flatMap((message, index) => message.role === "assistant" ? [index + 1] : []));
+  const participantSource = /memo|user|participant|用户|参与者|action|操作/i;
+  const kindPriority = { goal: 6, next_action: 5, hypothesis: 4, evidence: 3, constraint: 2, path: 1 } as const;
+  const cardsByContent = new Map<string, Extraction["cards"][number]>();
+
+  extraction.cards.forEach((original) => {
+    const sourceTurns = Array.from(original.source.matchAll(/(?:chat\s*turn|对话(?:轮次)?)\s*(\d+)/gi), (match) => Number(match[1]));
+    const assistantOnly = sourceTurns.some((turn) => assistantTurns.has(turn)) && !participantSource.test(original.source);
+    const taskContextOnly = /task\s*question|任务问题|研究问题题干/i.test(original.source)
+      && !(original.kind === "goal" && original.goalLevel === "main");
+    if (assistantOnly || taskContextOnly) return;
+
+    const card = original.kind === "goal" ? original : { ...original, goalLevel: undefined };
+    const key = card.content.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+    const existing = cardsByContent.get(key);
+    if (!existing || kindPriority[card.kind] > kindPriority[existing.kind]) cardsByContent.set(key, card);
+  });
+
+  const cards = Array.from(cardsByContent.values());
+  if (cards.length < 2 || cards.filter((card) => card.kind === "goal" && card.goalLevel === "main").length !== 1) return null;
+  const cardIds = new Set(cards.map((card) => card.id));
+  const relations = extraction.relations.filter((relation) =>
+    cardIds.has(relation.sourceCardId) && cardIds.has(relation.targetCardId));
+  return { cards, relations };
 }
 
 export async function POST(request: Request) {
@@ -94,7 +141,6 @@ export async function POST(request: Request) {
     });
   }
 
-  const evidencePack = task.materials.map((material) => `[${material.code}] ${material.excerpt[locale]}`).join("\n\n");
   const transcript = messages.map((message, index) => `${index + 1}. ${message.role}: ${message.text}`).join("\n");
   const actionTrace = actions.map((action) => {
     const target = [action.targetType, action.targetId].filter(Boolean).join(":");
@@ -109,12 +155,16 @@ Return JSON only, with this shape:
 
 Rules:
 - Write all card text in ${outputLanguage}.
-- Treat participant-authored memo and participant-AI conversation as the primary evidence of reasoning content.
+- Treat the participant-authored memo and user chat turns as the only evidence of reasoning content.
+- Assistant turns provide conversational context only. Do not convert an assistant suggestion into participant state unless a later user turn or memo explicitly adopts it.
+- A participant not rejecting an assistant suggestion does not count as adopting it.
 - Use the action trace only to infer attention, progress, sequence, and the last active step. Opening a material or checking a criterion never means the participant agrees with a claim.
-- The five materials may only verify citations; do not insert a conclusion merely because it appears in a material.
+- The task question provides context for the main goal only. Do not add evidence, constraints, hypotheses, or conclusions that appear only in the task materials.
 - Never use or infer a hidden answer key. Do not label any framing as the strongest or correct one.
 - Include exactly one main goal. Add only the subgoals, hypotheses, evidence, constraints, suspended goals, rejected paths, and next action that the participant trace supports.
 - Never create placeholder cards such as "not reliably identified" merely to fill a category. Omit unsupported categories instead.
+- Use goalLevel only for kind "goal"; omit goalLevel from all other card kinds.
+- Every card must include id, kind, content, detail, status, priority, confidence, source, and why. Every relation must include confidence.
 - A rejected path may be status "expired" only when the participant explicitly rejected it. A next action may be inferred from the last active step only when marked "uncertain" with confidence at most 40.
 - Use short, specific cards. Cite sources such as "memo: 已排除的方向", "chat turn 4", "action 12: material_opened", or "材料 A4". Do not fabricate source locations.
 - All candidates require participant calibration. Set the main goal and next action priority to "pinned"; others default to "normal".
@@ -133,46 +183,78 @@ Conversation:
 ${transcript || "(empty)"}
 
 Research action trace (progress signals only, not evidence of belief):
-${actionTrace || "(empty)"}
-
-Participant-visible evidence pack:
-${evidencePack}`;
+${actionTrace || "(empty)"}`;
 
   const baseUrl = process.env.DEEPSEEK_BASE_URL || process.env.LLM_BASE_URL || "https://api.deepseek.com";
   const model = process.env.DEEPSEEK_MODEL || process.env.LLM_MODEL || "deepseek-v4-flash";
 
   try {
-    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(45_000),
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        thinking: { type: "disabled" },
-        temperature: 0,
-        max_tokens: 2200,
-      }),
-    });
-    if (!response.ok) return NextResponse.json({ error: "DeepSeek provider unavailable" }, { status: 502 });
+    const requestCompletion = async (providerMessages: ProviderMessage[]) => {
+      const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(45_000),
+        body: JSON.stringify({
+          model,
+          messages: providerMessages,
+          response_format: { type: "json_object" },
+          thinking: { type: "disabled" },
+          temperature: 0,
+          max_tokens: 3200,
+        }),
+      });
+      if (!response.ok) throw new Error(`provider_status_${response.status}`);
+      const completion = completionSchema.safeParse(await response.json());
+      if (!completion.success) return { content: null, finishReason: "invalid_envelope" };
+      return {
+        content: completion.data.choices[0].message.content,
+        finishReason: completion.data.choices[0].finish_reason || "unknown",
+      };
+    };
 
-    const completion = completionSchema.safeParse(await response.json());
-    const content = completion.success ? completion.data.choices[0].message.content : null;
-    if (!content) return NextResponse.json({ error: "Invalid DeepSeek response" }, { status: 502 });
+    const baseMessages: ProviderMessage[] = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ];
+    const first = await requestCompletion(baseMessages);
+    let acceptedContent = first.content;
+    let extraction = validateExtraction(first.content);
 
-    const extraction = extractionSchema.safeParse(parseJsonObject(content));
-    if (!extraction.success) return NextResponse.json({ error: "Invalid extraction output" }, { status: 502 });
+    if (!extraction.success) {
+      console.warn("Problem State extraction retry", { finishReason: first.finishReason, issues: extraction.issues });
+      const repairPrompt = `The previous JSON output did not satisfy the required shape. Validation issues: ${extraction.issues.join(", ")}.
+Return one corrected JSON object only. Preserve only participant-supported content. Do not add placeholder cards.`;
+      const repairMessages: ProviderMessage[] = first.content
+        ? [...baseMessages, { role: "assistant", content: first.content }, { role: "user", content: repairPrompt }]
+        : [...baseMessages, { role: "user", content: repairPrompt }];
+      const repaired = await requestCompletion(repairMessages);
+      acceptedContent = repaired.content;
+      extraction = validateExtraction(repaired.content);
+      if (!extraction.success) {
+        console.warn("Problem State extraction invalid after retry", { finishReason: repaired.finishReason, issues: extraction.issues });
+        return NextResponse.json({ error: "Invalid extraction output after retry" }, { status: 502 });
+      }
+    }
+
+    let participantState = sanitizeExtraction(extraction.data, messages);
+    if (!participantState) {
+      const semanticRepair = await requestCompletion([
+        ...baseMessages,
+        { role: "assistant", content: acceptedContent || "{}" },
+        { role: "user", content: "Return corrected JSON. Remove assistant-only suggestions and duplicate cards. Include exactly one participant-supported main goal and at least one additional participant-supported card." },
+      ]);
+      const repairedState = validateExtraction(semanticRepair.content);
+      participantState = repairedState.success ? sanitizeExtraction(repairedState.data, messages) : null;
+      if (!participantState) return NextResponse.json({ error: "No valid participant-grounded extraction" }, { status: 502 });
+    }
 
     return NextResponse.json({
       mode: "live",
       provider: "deepseek",
       model,
-      promptVersion: "rmw_state_and_network_extraction_v3_trace_aware",
-      cards: extraction.data.cards,
-      relations: extraction.data.relations,
+      promptVersion: "rmw_state_and_network_extraction_v5_participant_grounded",
+      cards: participantState.cards,
+      relations: participantState.relations,
     });
   } catch {
     return NextResponse.json({ error: "DeepSeek extraction failed" }, { status: 502 });
