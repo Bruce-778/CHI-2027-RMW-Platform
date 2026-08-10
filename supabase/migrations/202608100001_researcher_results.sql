@@ -2,7 +2,7 @@
 create table if not exists public.participant_results (
   participant_code text primary key check (participant_code ~ '^RMW-[A-F0-9]{8}$'),
   locale text not null check (locale in ('zh-CN', 'en')),
-  condition text not null check (condition in ('rmw', 'summary', 'notes')),
+  condition text not null check (condition in ('rmw', 'summary', 'notes', 'control')),
   task_id text not null check (task_id = 'waste'),
   status text not null default 'started' check (status in ('started', 'completed')),
   consented_at timestamptz not null,
@@ -32,11 +32,12 @@ create table if not exists public.participant_result_events (
 );
 
 create index if not exists participant_results_status_idx on public.participant_results(status, created_at desc);
-create index if not exists participant_result_events_participant_idx on public.participant_result_events(participant_code, sequence_number);
-
 alter table public.participant_results enable row level security;
 alter table public.participant_result_events enable row level security;
+revoke all on table public.participant_results from public;
+revoke all on table public.participant_result_events from public;
 revoke all on table public.participant_results from anon, authenticated;
 revoke all on table public.participant_result_events from anon, authenticated;
-grant all on table public.participant_results to service_role;
-grant all on table public.participant_result_events to service_role;
+grant usage on schema public to service_role;
+grant select, insert, update on table public.participant_results to service_role;
+grant select, insert on table public.participant_result_events to service_role;

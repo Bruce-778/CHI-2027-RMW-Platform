@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createParticipant, findParticipant, resultStorageMode, saveResultEvent, updateParticipant } from "@/lib/result-store";
-import { getParticipantSessionSecret } from "@/lib/results-server";
+import { createParticipant, findParticipant, probeResultStorage, ResultStorageError, resultStorageMode, saveResultEvent, updateParticipant } from "@/lib/result-store";
+import { getParticipantSessionSecret, getResultStorageConfigurationIssue } from "@/lib/results-server";
 import { createSignedToken, verifySignedToken } from "@/lib/signed-token";
 
 const participantCodeSchema = z.string().regex(/^RMW-[A-F0-9]{8}$/);
@@ -44,6 +44,20 @@ async function participantFromToken(token: string, secret: string) {
   return participantCodeSchema.safeParse(payload.participantCode).success ? payload.participantCode : null;
 }
 
+export async function GET() {
+  if (!getParticipantSessionSecret() || getResultStorageConfigurationIssue()) {
+    return NextResponse.json({ mode: "unavailable", code: "RESULT_STORAGE_UNAVAILABLE" }, { status: 503 });
+  }
+  try {
+    return NextResponse.json({ mode: "ready", storage: await probeResultStorage() });
+  } catch (error) {
+    console.error("Result storage readiness probe failed", error instanceof ResultStorageError
+      ? { code: error.code, details: error.details }
+      : { error });
+    return NextResponse.json({ mode: "unavailable", code: "RESULT_STORAGE_UNAVAILABLE" }, { status: 503 });
+  }
+}
+
 export async function POST(request: Request) {
   const contentLength = Number(request.headers.get("content-length") || 0);
   if (contentLength > 1_000_000) return NextResponse.json({ error: "Result payload is too large" }, { status: 413 });
@@ -52,7 +66,7 @@ export async function POST(request: Request) {
   const storageMode = resultStorageMode();
   const sessionSecret = getParticipantSessionSecret();
   if (!storageMode || !sessionSecret) {
-    return NextResponse.json({ mode: "unavailable", error: "Result storage is not configured" }, { status: 503 });
+    return NextResponse.json({ mode: "unavailable", code: "RESULT_STORAGE_UNAVAILABLE" }, { status: 503 });
   }
 
   try {
@@ -104,7 +118,17 @@ export async function POST(request: Request) {
     }, parsed.data.action === "complete");
     return NextResponse.json({ mode: parsed.data.action === "complete" ? "completed" : "saved" });
   } catch (error) {
-    console.error("Result storage request failed", { action: parsed.data.action, storageMode, error });
-    return NextResponse.json({ error: "Could not save research result" }, { status: 502 });
+    const storageError = error instanceof ResultStorageError ? error : null;
+    console.error("Result storage request failed", {
+      action: parsed.data.action,
+      storageMode,
+      code: storageError?.code || "UNEXPECTED_ERROR",
+      details: storageError?.details,
+      error: storageError ? undefined : error,
+    });
+    if (parsed.data.action === "start" && storageError?.code === "PARTICIPANT_CONFLICT") {
+      return NextResponse.json({ code: "PARTICIPANT_CONFLICT" }, { status: 409 });
+    }
+    return NextResponse.json({ code: "RESULT_STORAGE_BACKEND_ERROR" }, { status: 503 });
   }
 }

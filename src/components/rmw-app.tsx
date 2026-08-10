@@ -18,6 +18,8 @@ import {
   completeRemoteStudy,
   saveRemoteStudySnapshot,
   startRemoteStudySession,
+  type RemoteStudyCompletionResult,
+  type RemoteStudyStartResult,
 } from "@/lib/remote-results";
 import {
   readProblemStateSnapshot,
@@ -97,6 +99,7 @@ export function RmwApp() {
   const [testMode, setTestMode] = useState(true);
   const [participantId, setParticipantId] = useState("");
   const [problemState, setProblemState] = useState<ProblemStateSnapshot | null>(() => readProblemStateSnapshot());
+  const [completionStatus, setCompletionStatus] = useState<"saving" | "saved" | "queued">("saving");
   const completionSubmittedRef = useRef(false);
   const t = copy[locale];
 
@@ -123,8 +126,20 @@ export function RmwApp() {
   useEffect(() => {
     if (screen !== "complete" || completionSubmittedRef.current) return;
     completionSubmittedRef.current = true;
-    completeRemoteStudy({ memo, chat, problemState });
+    let active = true;
+    setCompletionStatus("saving");
+    void completeRemoteStudy({ memo, chat, problemState }).then((result) => {
+      if (active) setCompletionStatus(result.status);
+    });
+    return () => { active = false; };
   }, [chat, memo, problemState, screen]);
+
+  const retryCompletion = async (): Promise<RemoteStudyCompletionResult> => {
+    setCompletionStatus("saving");
+    const result = await completeRemoteStudy({ memo, chat, problemState });
+    setCompletionStatus(result.status);
+    return result;
+  };
 
   return (
     <>
@@ -132,17 +147,22 @@ export function RmwApp() {
         <div className="max-w-md"><SquaresFour size={42} className="mx-auto mb-5 text-primary" /><h1 className="text-2xl font-semibold">{t.desktop}</h1><p className="mt-3 text-muted-foreground">{t.desktopText}</p></div>
       </div>
       <main className="desktop-app min-h-screen">
-        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantId={participantId} condition={condition} setCondition={setCondition} onStart={async () => {
+        {screen === "landing" && <Landing locale={locale} setLocale={setLocale} participantId={participantId} condition={condition} setCondition={setCondition} testMode={testMode} onStart={async (offline) => {
+          if (!offline) {
+            const remote = await startRemoteStudySession({ participantCode: participantId, locale, condition, taskId: "waste" });
+            if (remote.status !== "ready") return remote;
+          }
           const task = getResearchTask("waste");
-          void startRemoteStudySession({ participantCode: participantId, locale, condition, taskId: "waste" });
-          eventLog("consent_submitted", { locale, access: "anonymous", participantId, condition }, { stage: "consent" });
+          eventLog("consent_submitted", { locale, access: "anonymous", participantId, condition, offlineTest: offline }, { stage: "consent" });
           completionSubmittedRef.current = false;
+          setCompletionStatus("saving");
           setMemo(task.starterMemo[locale]);
           setChat([{ role: "assistant", text: task.assistantIntro[locale] }]);
           setProblemState(null);
           saveProblemStateSnapshot(null);
           eventLog("research_task_started", { taskId: "waste", assignment: "selected_condition", participantId, condition }, { stage: "task_setup" });
           setScreen("brief");
+          return { status: "ready" };
         }} t={t} />}
         {screen === "brief" && <TaskBrief locale={locale} taskId={taskId} setScreen={setScreen} />}
         {screen === "survey" && <Survey locale={locale} taskId={taskId} setScreen={setScreen} t={t} />}
@@ -151,7 +171,7 @@ export function RmwApp() {
         {screen === "interruption" && <InterruptionTask locale={locale} fastMode={testMode} onComplete={() => setScreen("recall")} />}
         {screen === "recall" && <Recall locale={locale} condition={condition} setScreen={setScreen} t={t} />}
         {screen === "workspace" && <Workspace key={`recovery-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="recovery" problemState={problemState} memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} t={t} />}
-        {screen === "complete" && <Complete setScreen={setScreen} t={t} />}
+        {screen === "complete" && <Complete setScreen={setScreen} locale={locale} status={completionStatus} testMode={testMode} onRetry={retryCompletion} t={t} />}
       </main>
     </>
   );
@@ -169,6 +189,7 @@ function Landing({
   participantId,
   condition,
   setCondition,
+  testMode,
   onStart,
   t,
 }: {
@@ -177,10 +198,26 @@ function Landing({
   participantId: string;
   condition: Condition;
   setCondition: (condition: Condition) => void;
-  onStart: () => Promise<void>;
+  testMode: boolean;
+  onStart: (offline: boolean) => Promise<RemoteStudyStartResult>;
   t: typeof copy[Locale];
 }) {
   const [consent, setConsent] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<RemoteStudyStartResult["status"] | null>(null);
+  const handleStart = async (offline: boolean) => {
+    if (starting) return;
+    setStarting(true);
+    setStartError(null);
+    const result = await onStart(offline);
+    if (result.status !== "ready") setStartError(result.status);
+    setStarting(false);
+  };
+  const errorText = startError === "participant_conflict"
+    ? (locale === "zh-CN" ? "此研究编号已被使用，请刷新页面生成新编号或联系研究者。" : "This research ID is already in use. Refresh or contact the researcher.")
+    : startError
+      ? (locale === "zh-CN" ? "结果存储暂不可用，请联系研究者或重试。" : "Result storage is temporarily unavailable. Contact the researcher or retry.")
+      : null;
   return <div className="min-h-screen bg-[#f8f7f3]">
     <header className="mx-auto flex h-20 max-w-6xl items-center justify-between px-8"><Brand /><LanguageChoice locale={locale} setLocale={setLocale} /></header>
     <section className="mx-auto grid max-w-6xl grid-cols-[1.08fr_.92fr] items-center gap-16 px-8 py-20">
@@ -205,7 +242,8 @@ function Landing({
           </div>
         </fieldset>
         <label className="mt-7 flex cursor-pointer items-start gap-3 text-sm leading-6"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)} className="mt-1 size-4 accent-[var(--primary)]"/><span>{t.consent}</span></label>
-        <TimedButton seconds={5} ready={consent&&Boolean(participantId)} locale={locale} label={t.enter} blockedLabel={locale==="zh-CN"?"请勾选同意":"Provide consent to continue"} onClick={onStart} className="mt-7 h-12 w-full" />
+        <TimedButton seconds={5} ready={consent&&Boolean(participantId)&&!starting} locale={locale} label={starting?(locale==="zh-CN"?"正在连接结果存储…":"Connecting to result storage…"):t.enter} blockedLabel={starting?(locale==="zh-CN"?"正在连接结果存储…":"Connecting…"):(locale==="zh-CN"?"请勾选同意":"Provide consent to continue")} onClick={()=>void handleStart(false)} className="mt-7 h-12 w-full" />
+        {errorText&&<div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900"><p>{errorText}</p><div className="mt-3 flex gap-2"><Button size="sm" variant="outline" disabled={starting} onClick={()=>void handleStart(false)}>{locale==="zh-CN"?"重试":"Retry"}</Button>{testMode&&<Button size="sm" variant="secondary" disabled={starting} onClick={()=>void handleStart(true)}>{locale==="zh-CN"?"仅本地测试：离线继续":"Local test only: continue offline"}</Button>}</div></div>}
         <p className="mt-3 text-center text-[11px] text-muted-foreground">{locale==="zh-CN"?"按钮将在阅读时间结束且信息完整后开放。":"The button unlocks after the reading time and required fields are complete."}</p>
       </div>
     </section>
@@ -953,4 +991,11 @@ function KnowledgeNetwork({locale,cards,relations,selected,setSelected,compact=f
 
 function PrimaryContinue({locale,setScreen,t}:{locale:Locale;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) { return <div className="shrink-0 border-t bg-white px-5 py-3"><TimedButton seconds={5} locale={locale} label={t.endStudy} className="h-11 w-full text-sm" onClick={()=>{eventLog("end_study_clicked",{},{stage:"recovery"});setScreen("complete")}} /></div> }
 
-function Complete({setScreen,t}:{setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) { return <div className="grid min-h-screen place-items-center bg-[#f7f6f2] p-8"><div className="max-w-lg text-center"><div className="mx-auto grid size-16 place-items-center rounded-2xl bg-[var(--active-soft)] text-[var(--active)]"><CheckCircle size={36} weight="fill"/></div><h1 className="mt-6 text-3xl font-semibold">{t.completed}</h1><p className="mt-3 text-muted-foreground">{t.completeText}</p><Button variant="outline" className="mt-8" onClick={()=>setScreen("landing")}>{t.back}</Button></div></div> }
+function Complete({setScreen,locale,status,testMode,onRetry,t}:{setScreen:(s:Screen)=>void;locale:Locale;status:"saving"|"saved"|"queued";testMode:boolean;onRetry:()=>Promise<RemoteStudyCompletionResult>;t:typeof copy[Locale]}) {
+  const message = status === "saving"
+    ? (locale === "zh-CN" ? "正在提交研究结果，请不要关闭此页面。" : "Submitting your research results. Do not close this page.")
+    : status === "saved"
+      ? t.completeText
+      : (locale === "zh-CN" ? "结果暂存在当前浏览器中，尚未完成线上提交。请重新提交。" : "Results are queued in this browser and have not reached the server. Please retry.");
+  return <div className="grid min-h-screen place-items-center bg-[#f7f6f2] p-8"><div className="max-w-lg text-center"><div className={`mx-auto grid size-16 place-items-center rounded-2xl ${status==="queued"?"bg-amber-100 text-amber-700":"bg-[var(--active-soft)] text-[var(--active)]"}`}>{status==="queued"?<WarningCircle size={36} weight="fill"/>:<CheckCircle size={36} weight="fill"/>}</div><h1 className="mt-6 text-3xl font-semibold">{t.completed}</h1><p className="mt-3 text-muted-foreground">{message}</p>{status==="queued"&&<div className="mt-6 flex justify-center gap-2"><Button onClick={()=>void onRetry()}>{locale==="zh-CN"?"重新提交":"Retry submission"}</Button>{testMode&&<Button variant="outline" onClick={()=>setScreen("landing")}>{locale==="zh-CN"?"仅本地测试：返回":"Local test: return"}</Button>}</div>}{status==="saved"&&<Button variant="outline" className="mt-8" onClick={()=>setScreen("landing")}>{t.back}</Button>}</div></div>;
+}
