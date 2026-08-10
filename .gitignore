@@ -23,6 +23,7 @@
 /dist/
 /.wrangler/
 /.vinext/
+/.rmw-results/
 
 # misc
 .DS_Store

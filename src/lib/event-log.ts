@@ -99,4 +99,6 @@ export function eventLog(
     at: new Date().toISOString(),
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify([...current, item].slice(-1000)));
+  syncRemoteEvent(item as unknown as Record<string, unknown>);
 }
+import { syncRemoteEvent } from "./remote-results";

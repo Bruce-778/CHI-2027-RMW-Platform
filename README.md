@@ -19,8 +19,9 @@ Open `http://localhost:3000`. Useful review routes:
 - `/?view=recovery` — RMW recovery workspace
 - `/?view=recovery&condition=summary&lang=en` — English Auto Summary condition
 - `/?view=recall` — unsupported recall gate
+- `/admin` — password-protected researcher results console
 
-The participant flow uses one fixed task and does not expose a topic chooser. Interaction events remain in browser local storage. Configure `.env.local` from `.env.example` to enable DeepSeek.
+The participant flow uses one fixed task and does not expose a topic chooser. Configure `.env.local` from `.env.example` to enable DeepSeek and result collection.
 
 The current build starts in **test mode**: timing gates are bypassed so every screen can be reviewed immediately. Add `?timed=1` to a direct route to check the formal protocol. The formal Phase 1 duration is 10 minutes; its save window opens in the final three minutes.
 
@@ -60,5 +61,32 @@ The demo now follows one closed-loop interruption protocol:
 For local review, test mode is the default and bypasses the Phase 1 and checkpoint waiting gates. Append `?timed=1` (or `&timed=1` when a query already exists) to enforce the 10-minute Phase 1 gate and one-minute save window.
 
 The DeepSeek tutor uses a conversational research-partner prompt: it responds to the participant's current intent, uses ordinary short paragraphs, structures only when useful, cites materials for consequential claims, and preserves uncertainty without forcing fixed labels or a repeated answer template. The extraction prompt separately produces the bounded reasoning-card set and relations for the knowledge network from the same trace.
+
+## Protected research results
+
+The participant client can only write through `/api/results`; it has no result-reading endpoint. Each write after consent requires a short-lived token signed by the server. `/api/research/results` requires a separate researcher session stored in an `HttpOnly`, `SameSite=Strict` cookie, and `/admin` is marked `noindex`. Database credentials and the researcher password never enter the participant bundle.
+
+The system saves the pre-survey, memo, AI conversation, calibrated Problem State, unsupported recall, recovery-state edits, completion status, and interaction events. Browser outboxes retain unsent snapshots and events and retry them after a participant session becomes available.
+
+For local rehearsal, set these server-side values. Results are written to `.rmw-results/results.json`; this mode is for one trusted machine only.
+
+```bash
+RMW_LOCAL_RESULTS_DIR=.rmw-results
+PARTICIPANT_SESSION_SECRET=replace-with-a-long-random-secret
+RESEARCHER_ADMIN_PASSWORD=replace-with-a-strong-researcher-password
+RESEARCHER_SESSION_SECRET=replace-with-a-different-long-random-secret
+```
+
+For a deployed website, apply `supabase/migrations/202608100001_researcher_results.sql`, omit `RMW_LOCAL_RESULTS_DIR`, and configure:
+
+```bash
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SECRET_KEY=your-service-role-or-secret-key
+PARTICIPANT_SESSION_SECRET=replace-with-a-long-random-secret
+RESEARCHER_ADMIN_PASSWORD=replace-with-a-strong-researcher-password
+RESEARCHER_SESSION_SECRET=replace-with-a-different-long-random-secret
+```
+
+Never prefix the Supabase secret, researcher password, or session secrets with `NEXT_PUBLIC_`. A deployment without Supabase does not silently fall back to an ephemeral production file; configure Supabase explicitly so results survive restarts and scaling.
 
 Use `npm run sites:build` to produce the edge-deployable bundle in `dist/`.
