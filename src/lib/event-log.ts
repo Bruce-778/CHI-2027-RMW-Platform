@@ -9,6 +9,16 @@ export interface StudyEvent {
   at: string;
 }
 
+export interface ProblemStateAction {
+  type: string;
+  stage: string;
+  targetType?: string;
+  targetId?: string;
+  sequenceNumber: number;
+  payload: Record<string, unknown>;
+  at: string;
+}
+
 const STORAGE_KEY = "rmw-demo-events";
 const PARTICIPANT_KEY = "rmw-participant-id";
 
@@ -29,6 +39,45 @@ export function readStudyEvents(): StudyEvent[] {
   } catch {
     return [];
   }
+}
+
+const PROBLEM_STATE_ACTIONS = new Set([
+  "material_opened",
+  "phase_criterion_toggled",
+  "memo_edited",
+  "chat_message_sent",
+  "chat_response_received",
+  "phase_one_checkpoint_requested",
+  "workspace_timer_expired",
+]);
+
+export function readProblemStateActions(): ProblemStateAction[] {
+  const anonymousCode = getOrCreateParticipantId();
+  const allEvents = readStudyEvents();
+  const studyStart = allEvents.findLastIndex((event) =>
+    event.type === "research_task_started" && event.payload.anonymousCode === anonymousCode);
+  const relevant = allEvents.slice(studyStart + 1).filter((event) =>
+    event.payload.anonymousCode === anonymousCode
+    && event.stage === "research_work"
+    && PROBLEM_STATE_ACTIONS.has(event.type));
+  const lastMemoEdit = relevant.findLastIndex((event) => event.type === "memo_edited");
+
+  return relevant
+    .filter((event, index) => event.type !== "memo_edited" || index === lastMemoEdit)
+    .slice(-80)
+    .map((event) => {
+      const safePayload = { ...event.payload };
+      delete safePayload.anonymousCode;
+      return {
+        type: event.type,
+        stage: event.stage,
+        targetType: event.targetType,
+        targetId: event.targetId,
+        sequenceNumber: event.sequenceNumber,
+        payload: safePayload,
+        at: event.at,
+      };
+    });
 }
 
 export function eventLog(

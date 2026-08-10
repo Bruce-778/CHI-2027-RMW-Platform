@@ -29,45 +29,27 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
-import { eventLog } from "@/lib/event-log";
+import { eventLog, readProblemStateActions } from "@/lib/event-log";
 import type { ResearchTaskId } from "@/lib/research-task";
-import type { EpistemicStatus, Locale, RelationType } from "@/lib/rmw-types";
+import type {
+  EpistemicStatus,
+  Locale,
+  ProblemStateCard,
+  ProblemStateRelation,
+  ProblemStateSnapshot,
+} from "@/lib/rmw-types";
 
-type CaptureKind = "goal" | "hypothesis" | "evidence" | "constraint" | "path" | "next_action";
-type GoalLevel = "main" | "subgoal" | "suspended";
-
-interface CaptureCard {
-  id: string;
-  kind: CaptureKind;
-  goalLevel?: GoalLevel;
-  content: Record<Locale, string>;
-  detail: Record<Locale, string>;
-  status: EpistemicStatus;
-  priority: "normal" | "pinned";
-  confidence: number;
-  source: Record<Locale, string>;
-  why: Record<Locale, string>;
-}
-
-type ExtractedCard = Omit<CaptureCard, "content" | "detail" | "source" | "why"> & {
+type ExtractedCard = Omit<ProblemStateCard, "content" | "detail" | "source" | "why"> & {
   content: string;
   detail: string;
   source: string;
   why: string;
 };
 
-interface CaptureRelation {
-  id: string;
-  sourceCardId: string;
-  targetCardId: string;
-  relationType: RelationType;
-  confidence?: number;
-}
-
 const labels = {
   "zh-CN": {
     title: "保存窗口",
-    subtitle: "进入保存窗口后，系统会尝试根据你实际写下的 memo 与对话提取候选 Problem State。请校准卡片后再进入中断任务。",
+    subtitle: "系统会结合你实际写下的 memo、人机对话与研究操作轨迹提取候选 Problem State。操作轨迹只用于判断研究进度，不代表你认同某项结论。",
     task: "主任务",
     save: "保存窗口",
     break: "中断任务",
@@ -90,7 +72,7 @@ const labels = {
     waiting: "保存按钮将在 1 分钟后开放",
     early: "请完成 1 分钟的查看时间，倒计时结束后才可进入中断任务。",
     guideTitle: "保存窗口说明",
-    guideDescription: "只有 DeepSeek 成功分析你实际写下的内容后，才会显示 Problem State 与知识网络；请校准每张卡片后再进入中断任务。",
+    guideDescription: "只有 DeepSeek 成功分析参与者内容与研究轨迹后，才会显示 Problem State；校准后的结果会用于中断后的恢复支持。",
     interruption: "中断任务",
     letterGame: "字母 2-back 游戏",
     letterHint: "判断当前字母是否与前两个字母相同。",
@@ -106,7 +88,7 @@ const labels = {
   },
   en: {
     title: "Save window",
-    subtitle: "On entering the save window, the system attempts to extract candidate problem state from participant-authored memo and chat content. Calibrate the cards before continuing.",
+    subtitle: "The system combines your memo, human-AI conversation, and research-action trace to extract candidate problem state. Actions indicate progress, not endorsement of a conclusion.",
     task: "Primary task",
     save: "Save window",
     break: "Interruption",
@@ -129,7 +111,7 @@ const labels = {
     waiting: "Save opens after one minute",
     early: "Please use the full one-minute review period. The interruption opens when the countdown ends.",
     guideTitle: "Save-window guide",
-    guideDescription: "Problem state and the network appear only after DeepSeek successfully analyzes participant-authored content. Calibrate each card before continuing.",
+    guideDescription: "Problem state appears only after DeepSeek analyzes participant-authored content and research actions. The calibrated result is used for post-interruption recovery.",
     interruption: "Interruption",
     letterGame: "Letter 2-back game",
     letterHint: "Decide whether the current letter matches the letter two positions back.",
@@ -191,7 +173,7 @@ function StateTile({
   selected,
   onSelect,
 }: {
-  card: CaptureCard;
+  card: ProblemStateCard;
   locale: Locale;
   selected?: boolean;
   onSelect?: () => void;
@@ -226,7 +208,7 @@ function CheckpointInspector({
   togglePin,
   updateContent,
 }: {
-  card: CaptureCard;
+  card: ProblemStateCard;
   locale: Locale;
   t: (typeof labels)[Locale];
   updateStatus: (id: string, status: EpistemicStatus) => void;
@@ -235,10 +217,6 @@ function CheckpointInspector({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(card.content[locale]);
-  useEffect(() => {
-    setEditing(false);
-    setDraft(card.content[locale]);
-  }, [card.id, card.content, locale]);
   return <aside className="flex h-full min-h-0 flex-col rounded-xl border bg-[#fcfcfd] p-4">
     <div className="flex items-start justify-between gap-2">
       <div>
@@ -301,8 +279,8 @@ function CheckpointNetwork({
   selected,
   onSelect,
 }: {
-  cards: CaptureCard[];
-  relations: CaptureRelation[];
+  cards: ProblemStateCard[];
+  relations: ProblemStateRelation[];
   locale: Locale;
   selected: string;
   onSelect: (id: string) => void;
@@ -355,7 +333,7 @@ function CheckpointNetwork({
 }
 
 function CheckpointGuide({ locale, open, onOpenChange }: { locale: Locale; open: boolean; onOpenChange: (open: boolean) => void }) {
-  const allSteps = locale === "zh-CN" ? [
+  const allSteps = useMemo(() => locale === "zh-CN" ? [
     { target: "checkpoint-timeline", title: "保存阶段时间轴", body: "这里展示实验流程。您当前处于第 2 阶段「保存窗口 (Save Window)」，系统正结合第一阶段的记录归纳 Problem State。" },
     { target: "checkpoint-goals", title: "目标结构分布", body: "此处按层级汇总主目标、活跃子目标、挂起分支与弃用路径。它们构成了研究推理的核心主干。" },
     { target: "checkpoint-state", title: "候选 Problem State 列表", body: "由 DeepSeek 提取的推理卡片。每张卡片对应一个推理要点，左侧边框颜色代表其认知状态（Active / Uncertain / Expired）。" },
@@ -371,7 +349,7 @@ function CheckpointGuide({ locale, open, onOpenChange }: { locale: Locale; open:
     { target: "checkpoint-network", title: "Knowledge Network", body: "Visualizes logical leads-to and challenges relations between reasoning blocks. Click nodes to select and calibrate matching cards." },
     { target: "checkpoint-empty", title: "Problem State Status", body: "Shows extraction status and notices when cards are not yet generated or when testing without API keys." },
     { target: "checkpoint-footer", title: "Save & Progress Control", body: "Displays countdown timer or completion status. In test mode or when finished, proceed to the next stage using the right button." },
-  ];
+  ], [locale]);
 
   const [availableSteps, setAvailableSteps] = useState(allSteps);
   const [index, setIndex] = useState(0);
@@ -380,19 +358,23 @@ function CheckpointGuide({ locale, open, onOpenChange }: { locale: Locale; open:
   // Filter steps based on elements currently present in DOM
   useEffect(() => {
     if (!open) return;
-    const valid = allSteps.filter((s) => Boolean(document.querySelector(`[data-tour="${s.target}"]`)));
-    if (valid.length > 0) {
-      setAvailableSteps(valid);
-      setIndex(0);
-    }
-  }, [open]);
+    const frame = requestAnimationFrame(() => {
+      const valid = allSteps.filter((s) => Boolean(document.querySelector(`[data-tour="${s.target}"]`)));
+      if (valid.length > 0) {
+        setAvailableSteps(valid);
+        setIndex(0);
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [allSteps, open]);
 
   const step = availableSteps[Math.min(index, availableSteps.length - 1)] || availableSteps[0];
+  const stepTarget = step?.target;
 
   useEffect(() => {
-    if (!open || !step) return;
+    if (!open || !stepTarget) return;
     const update = () => {
-      const element = document.querySelector<HTMLElement>(`[data-tour="${step.target}"]`);
+      const element = document.querySelector<HTMLElement>(`[data-tour="${stepTarget}"]`);
       if (element) {
         element.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
         setRect(element.getBoundingClientRect());
@@ -409,7 +391,7 @@ function CheckpointGuide({ locale, open, onOpenChange }: { locale: Locale; open:
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
-  }, [open, index, step?.target]);
+  }, [open, stepTarget]);
 
   if (!open || !step || !rect) return null;
 
@@ -482,11 +464,11 @@ export function RmwCheckpoint({
   messages: Array<{ role: "user" | "assistant"; text: string }>;
   testMode: boolean;
   onBack: () => void;
-  onContinue: () => void;
+  onContinue: (snapshot?: ProblemStateSnapshot) => void;
 }) {
   const t = labels[locale];
-  const [cards, setCards] = useState<CaptureCard[]>([]);
-  const [relations, setRelations] = useState<CaptureRelation[]>([]);
+  const [cards, setCards] = useState<ProblemStateCard[]>([]);
+  const [relations, setRelations] = useState<ProblemStateRelation[]>([]);
   const [selected, setSelected] = useState("");
   const [mode, setMode] = useState<"loading" | "live" | "insufficient" | "unavailable" | "error">("loading");
   const [guideOpen, setGuideOpen] = useState(true);
@@ -521,13 +503,13 @@ export function RmwCheckpoint({
         const response = await fetch("/api/extract", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ locale, taskId, memo, messages }),
+          body: JSON.stringify({ locale, taskId, memo, messages, actions: readProblemStateActions() }),
           signal: controller.signal,
         });
         const result = await response.json() as {
           mode?: "live" | "insufficient" | "unavailable";
           cards?: ExtractedCard[];
-          relations?: CaptureRelation[];
+          relations?: ProblemStateRelation[];
           error?: string;
         };
         if (!response.ok) throw new Error(result.error || "Extraction failed");
@@ -680,7 +662,7 @@ export function RmwCheckpoint({
               return;
             }
             eventLog("checkpoint_completed", { taskId, cards, relations }, { stage: "checkpoint" });
-            onContinue();
+            onContinue({ cards, relations, capturedAt: new Date().toISOString() });
           }}>{!extractionReady&&testMode?(locale === "zh-CN"?"仅测试模式：跳过保存":"Test mode only: skip save"):t.saveAndBreak}<ArrowRight /></Button>
         </div>
       </div>

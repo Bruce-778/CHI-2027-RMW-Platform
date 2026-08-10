@@ -14,3 +14,24 @@ export interface ReasoningCard {
   revision: number; generatedBy: "llm" | "researcher" | "participant"; reviewedByResearcher: boolean;
 }
 export interface CardRelation { id: string; sourceCardId: string; targetCardId: string; relationType: RelationType; }
+
+export interface ProblemStateCard {
+  id: string;
+  kind: CardType;
+  goalLevel?: GoalLevel;
+  content: Record<Locale, string>;
+  detail: Record<Locale, string>;
+  status: EpistemicStatus;
+  priority: "normal" | "pinned";
+  confidence: number;
+  source: Record<Locale, string>;
+  why: Record<Locale, string>;
+}
+
+export interface ProblemStateRelation extends CardRelation { confidence?: number; }
+
+export interface ProblemStateSnapshot {
+  cards: ProblemStateCard[];
+  relations: ProblemStateRelation[];
+  capturedAt: string;
+}

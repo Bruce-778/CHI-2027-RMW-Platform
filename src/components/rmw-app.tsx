@@ -13,15 +13,20 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { createInitialCards, relations } from "@/lib/demo-data";
 import { eventLog, getOrCreateParticipantId } from "@/lib/event-log";
+import {
+  readProblemStateSnapshot,
+  saveProblemStateSnapshot,
+  toCardRelations,
+  toReasoningCards,
+} from "@/lib/problem-state";
 import {
   getResearchTask,
   phaseOneGoals,
   taskOverview,
   type ResearchTaskId,
 } from "@/lib/research-task";
-import type { Condition, EpistemicStatus, Locale, ReasoningCard } from "@/lib/rmw-types";
+import type { CardRelation, Condition, EpistemicStatus, Locale, ProblemStateSnapshot, ReasoningCard } from "@/lib/rmw-types";
 import { InterruptionTask, RmwCheckpoint } from "@/components/rmw-checkpoint";
 import { TimedButton } from "@/components/timed-button";
 
@@ -86,6 +91,7 @@ export function RmwApp() {
   const [chat, setChat] = useState<ChatMessage[]>(() => [{ role: "assistant", text: getResearchTask("waste").assistantIntro["zh-CN"] }]);
   const [testMode, setTestMode] = useState(true);
   const [participantId, setParticipantId] = useState("");
+  const [problemState, setProblemState] = useState<ProblemStateSnapshot | null>(() => readProblemStateSnapshot());
   const t = copy[locale];
 
   useEffect(() => {
@@ -118,16 +124,18 @@ export function RmwApp() {
           const task = getResearchTask("waste");
           setMemo(task.starterMemo[locale]);
           setChat([{ role: "assistant", text: task.assistantIntro[locale] }]);
+          setProblemState(null);
+          saveProblemStateSnapshot(null);
           eventLog("research_task_started", { taskId: "waste", assignment: "single_task", participantId }, { stage: "task_setup" });
           setScreen("brief");
         }} t={t} />}
         {screen === "brief" && <TaskBrief locale={locale} taskId={taskId} setScreen={setScreen} />}
         {screen === "survey" && <Survey locale={locale} taskId={taskId} setScreen={setScreen} t={t} />}
-        {screen === "work" && <Workspace key={`work-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="work" memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} t={t} />}
-        {screen === "checkpoint" && <RmwCheckpoint locale={locale} taskId={taskId} memo={memo} messages={chat} testMode={testMode} onBack={() => setScreen("work")} onContinue={() => setScreen("interruption")} />}
+        {screen === "work" && <Workspace key={`work-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="work" problemState={problemState} memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} t={t} />}
+        {screen === "checkpoint" && <RmwCheckpoint locale={locale} taskId={taskId} memo={memo} messages={chat} testMode={testMode} onBack={() => setScreen("work")} onContinue={(snapshot) => { if (snapshot) { setProblemState(snapshot); saveProblemStateSnapshot(snapshot); } setScreen("interruption"); }} />}
         {screen === "interruption" && <InterruptionTask locale={locale} fastMode={testMode} onComplete={() => setScreen("recall")} />}
         {screen === "recall" && <Recall locale={locale} setScreen={setScreen} t={t} />}
-        {screen === "workspace" && <Workspace key={`recovery-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="recovery" memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} t={t} />}
+        {screen === "workspace" && <Workspace key={`recovery-${taskId}-${locale}`} locale={locale} condition={condition} taskId={taskId} phase="recovery" problemState={problemState} memo={memo} setMemo={setMemo} chat={chat} setChat={setChat} setScreen={setScreen} testMode={testMode} t={t} />}
         {screen === "complete" && <Complete setScreen={setScreen} t={t} />}
       </main>
     </>
@@ -539,6 +547,7 @@ function Workspace({
   condition,
   taskId,
   phase,
+  problemState,
   memo,
   setMemo,
   chat,
@@ -551,6 +560,7 @@ function Workspace({
   condition: Condition;
   taskId: ResearchTaskId;
   phase: "work" | "recovery";
+  problemState: ProblemStateSnapshot | null;
   memo: string;
   setMemo: (memo: string) => void;
   chat: ChatMessage[];
@@ -560,7 +570,8 @@ function Workspace({
   t: typeof copy[Locale];
 }) {
   const task=getResearchTask(taskId);
-  const [cards,setCards]=useState(()=>createInitialCards(taskId));
+  const [cards,setCards]=useState<ReasoningCard[]>(()=>phase==="recovery"&&problemState?toReasoningCards(problemState,locale):[]);
+  const recoveryRelations=useMemo<CardRelation[]>(()=>problemState?toCardRelations(problemState):[],[problemState]);
   const [selected,setSelected]=useState("uncertain");
   const [message,setMessage]=useState("");
   const [isLoading,setIsLoading]=useState(false);
@@ -713,7 +724,7 @@ function Workspace({
       <section ref={rightColumnRef} className="grid min-h-0 min-w-0 overflow-hidden bg-white" style={{gridTemplateRows:`${rightTopRatio}fr 10px ${100-rightTopRatio}fr`}}>
         {phase==="work"
           ?<PhaseOnePanel locale={locale} taskId={taskId} memo={memo} remaining={remainingSeconds} testMode={testMode} setScreen={setScreen}/>
-          :<RecoveryPanel locale={locale} condition={condition} cards={cards} selected={selected} setSelected={setSelected} updateStatus={updateStatus} togglePin={togglePin} updateContent={updateContent} setScreen={setScreen} t={t}/>}
+          :<RecoveryPanel locale={locale} condition={condition} cards={cards} relations={recoveryRelations} selected={selected} setSelected={setSelected} updateStatus={updateStatus} togglePin={togglePin} updateContent={updateContent} setScreen={setScreen} t={t}/>}
         <button
           type="button"
           aria-label={locale==="zh-CN"?"上下拖动，调整目标与 AI 助手窗口高度":"Drag vertically to resize the goals and AI-assistant windows"}
@@ -806,7 +817,8 @@ function PhaseOnePanel({locale,taskId,memo,remaining,testMode,setScreen}:{locale
   </section>;
 }
 
-function RecoveryPanel({locale,condition,cards,selected,setSelected,updateStatus,togglePin,updateContent,setScreen,t}:{locale:Locale;condition:Condition;cards:ReasoningCard[];selected:string;setSelected:(s:string)=>void;updateStatus:(id:string,s:EpistemicStatus)=>void;togglePin:(id:string)=>void;updateContent:(id:string,value:string)=>void;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
+function RecoveryPanel({locale,condition,cards,relations,selected,setSelected,updateStatus,togglePin,updateContent,setScreen,t}:{locale:Locale;condition:Condition;cards:ReasoningCard[];relations:CardRelation[];selected:string;setSelected:(s:string)=>void;updateStatus:(id:string,s:EpistemicStatus)=>void;togglePin:(id:string)=>void;updateContent:(id:string,value:string)=>void;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) {
+  if(!cards.length)return <RecoveryShell t={t}><div className="m-6 rounded-xl border bg-white p-5 text-sm leading-6 text-muted-foreground">{locale==="zh-CN"?"本次没有保存经过参与者校准的 Problem State，因此不会显示演示卡片。":"No participant-calibrated problem state was saved, so no demo cards are shown."}</div><PrimaryContinue locale={locale} setScreen={setScreen} t={t}/></RecoveryShell>;
   const main=cards.find(card=>card.goalLevel==="main");
   const position=cards.filter(card=>card.goalLevel==="subgoal"&&card.status!=="expired").slice(0,2).map(card=>card.content[locale]).join("；");
   const uncertain=cards.find(card=>card.status==="uncertain");
@@ -823,7 +835,7 @@ function RecoveryPanel({locale,condition,cards,selected,setSelected,updateStatus
   return <RecoveryShell t={t}><Tabs defaultValue="brief" className="flex min-h-0 flex-1 flex-col"><div className="flex items-center justify-between border-b px-5 py-2.5"><TabsList className="inline-flex h-9 items-center justify-center rounded-lg bg-secondary/80 p-1 text-muted-foreground"><TabsTrigger className="inline-flex h-7 items-center justify-center rounded-md px-3.5 text-xs font-medium transition-all data-active:bg-white data-active:text-foreground data-active:shadow-sm" value="brief">{t.resume}</TabsTrigger><TabsTrigger className="inline-flex h-7 items-center justify-center rounded-md px-3.5 text-xs font-medium transition-all data-active:bg-white data-active:text-foreground data-active:shadow-sm" value="cards">{t.cards}</TabsTrigger><TabsTrigger className="inline-flex h-7 items-center justify-center rounded-md px-3.5 text-xs font-medium transition-all data-active:bg-white data-active:text-foreground data-active:shadow-sm" value="network">{t.network}</TabsTrigger></TabsList><span className="text-[10px] font-medium text-muted-foreground">{cards.length} {t.allCards}</span></div>
     <TabsContent value="brief" className="m-0 min-h-0 flex-1 overflow-auto"><ResumeBrief locale={locale} cards={cards} t={t}/></TabsContent>
     <TabsContent value="cards" className="m-0 grid min-h-0 flex-1 grid-cols-[1.18fr_.82fr]"><div className="hide-scrollbar min-h-0 overflow-y-auto border-r px-4 py-3"><div className="mb-3 rounded-lg bg-secondary/70 p-3 text-xs leading-5 text-secondary-foreground"><strong>{t.ready}：</strong>{t.readFirst}</div><GoalHierarchy cards={cards} locale={locale} selected={selected} setSelected={setSelected}/><p className="mb-2 mt-4 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Problem state cards</p>{cards.filter(card=>card.cardType!=="goal").map(card=><ReasoningCardView key={card.id} card={card} locale={locale} selected={selected===card.id} onSelect={()=>{setSelected(card.id);eventLog("card_selected",{id:card.id},{stage:"recovery",targetType:"reasoning_card",targetId:card.id})}} updateStatus={updateStatus} t={t}/>)}</div><CardInspector key={`${selected}-${locale}`} card={cards.find(card=>card.id===selected) || cards[0]} locale={locale} updateStatus={updateStatus} togglePin={togglePin} updateContent={updateContent} t={t}/></TabsContent>
-    <TabsContent value="network" className="m-0 min-h-0 flex-1"><KnowledgeNetwork locale={locale} cards={cards} selected={selected} setSelected={setSelected}/></TabsContent>
+    <TabsContent value="network" className="m-0 min-h-0 flex-1"><KnowledgeNetwork locale={locale} cards={cards} relations={relations} selected={selected} setSelected={setSelected}/></TabsContent>
   </Tabs><PrimaryContinue locale={locale} setScreen={setScreen} t={t}/></RecoveryShell>;
 }
 
@@ -867,20 +879,8 @@ function ReasoningCardView({card,locale,selected,onSelect,updateStatus,t}:{card:
 type FlowData={ label:string; status:EpistemicStatus; selected:boolean };
 function FlowNode({data}:{data:FlowData}) { const colors=data.status==="active"?"border-emerald-400 bg-emerald-50":data.status==="uncertain"?"border-amber-400 bg-amber-50":"border-slate-300 bg-slate-50"; return <div className={`w-[118px] rounded-lg border-2 px-3 py-2 text-center text-[10px] font-medium leading-4 shadow-sm ${colors} ${data.selected?"ring-4 ring-indigo-100":""}`}><Handle type="target" position={Position.Left}/>{data.label}<Handle type="source" position={Position.Right}/></div> }
 const nodeTypes={reason:FlowNode};
-const flowPositions:Record<string,{x:number;y:number}>={
-  goal:{x:260,y:0},
-  "goal-compare":{x:60,y:90},
-  "goal-load":{x:220,y:90},
-  "goal-prior":{x:380,y:90},
-  "goal-longitudinal":{x:530,y:190},
-  "goal-domain":{x:530,y:270},
-  hypothesis:{x:220,y:210},
-  uncertain:{x:40,y:300},
-  constraint:{x:390,y:300},
-  path:{x:40,y:410},
-  next:{x:230,y:410},
-};
-function KnowledgeNetwork({locale,cards,selected,setSelected,compact=false}:{locale:Locale;cards:ReasoningCard[];selected:string;setSelected:(s:string)=>void;compact?:boolean}) { const nodes=useMemo<Node<FlowData>[]>(()=>cards.map(c=>({id:c.id,type:"reason",position:flowPositions[c.id]||{x:0,y:0},data:{label:c.content[locale],status:c.status,selected:c.id===selected}})),[cards,locale,selected]); const edges=useMemo<Edge[]>(()=>relations.map(r=>({id:r.id,source:r.sourceCardId,target:r.targetCardId,label:compact?undefined:r.relationType,animated:r.relationType==="leads_to",style:{stroke:r.relationType==="challenges"?"#c58a2c":"#8a93a5"},labelStyle:{fontSize:9,fill:"#6b7280"}})),[compact]); return <div className="h-full min-h-0 bg-[#fcfcfd]"><ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView minZoom={.45} maxZoom={1.4} onNodeClick={(_,n)=>{setSelected(n.id);eventLog("network_node_clicked",{id:n.id})}}><Background gap={22} size={1} color="#e8eaf0"/>{!compact&&<Controls position="bottom-right" showInteractive={false}/>}</ReactFlow></div> }
+function computeFlowPositions(cards:ReasoningCard[]) { const positions:Record<string,{x:number;y:number}>={}; const rows=[cards.filter(card=>card.goalLevel==="main"),cards.filter(card=>card.goalLevel==="subgoal"),cards.filter(card=>card.goalLevel==="suspended"),cards.filter(card=>!card.goalLevel)]; rows.forEach((row,rowIndex)=>row.forEach((card,columnIndex)=>{positions[card.id]={x:40+columnIndex*175,y:20+rowIndex*120}})); return positions; }
+function KnowledgeNetwork({locale,cards,relations,selected,setSelected,compact=false}:{locale:Locale;cards:ReasoningCard[];relations:CardRelation[];selected:string;setSelected:(s:string)=>void;compact?:boolean}) { const positions=useMemo(()=>computeFlowPositions(cards),[cards]); const nodes=useMemo<Node<FlowData>[]>(()=>cards.map(c=>({id:c.id,type:"reason",position:positions[c.id]||{x:0,y:0},data:{label:c.content[locale],status:c.status,selected:c.id===selected}})),[cards,locale,positions,selected]); const edges=useMemo<Edge[]>(()=>relations.map(r=>({id:r.id,source:r.sourceCardId,target:r.targetCardId,label:compact?undefined:r.relationType,animated:r.relationType==="leads_to",style:{stroke:r.relationType==="challenges"?"#c58a2c":"#8a93a5"},labelStyle:{fontSize:9,fill:"#6b7280"}})),[compact,relations]); return <div className="h-full min-h-0 bg-[#fcfcfd]"><ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView minZoom={.45} maxZoom={1.4} onNodeClick={(_,n)=>{setSelected(n.id);eventLog("network_node_clicked",{id:n.id})}}><Background gap={22} size={1} color="#e8eaf0"/>{!compact&&<Controls position="bottom-right" showInteractive={false}/>}</ReactFlow></div> }
 
 function PrimaryContinue({locale,setScreen,t}:{locale:Locale;setScreen:(s:Screen)=>void;t:typeof copy[Locale]}) { return <div className="shrink-0 border-t bg-white px-5 py-3"><TimedButton seconds={5} locale={locale} label={t.endStudy} className="h-11 w-full text-sm" onClick={()=>{eventLog("end_study_clicked",{},{stage:"recovery"});setScreen("complete")}} /></div> }
 

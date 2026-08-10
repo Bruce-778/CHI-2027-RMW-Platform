@@ -10,6 +10,15 @@ const requestSchema = z.object({
     role: z.enum(["user", "assistant"]),
     text: z.string().max(8000),
   })).max(60),
+  actions: z.array(z.object({
+    type: z.string().max(100),
+    stage: z.string().max(100),
+    targetType: z.string().max(100).optional(),
+    targetId: z.string().max(200).optional(),
+    sequenceNumber: z.number().int().nonnegative(),
+    payload: z.record(z.string(), z.unknown()),
+    at: z.string().max(100),
+  })).max(80).default([]),
 });
 
 const cardSchema = z.object({
@@ -34,8 +43,8 @@ const relationSchema = z.object({
 });
 
 const extractionSchema = z.object({
-  cards: z.array(cardSchema).min(6).max(12),
-  relations: z.array(relationSchema).min(4).max(20),
+  cards: z.array(cardSchema).min(2).max(12),
+  relations: z.array(relationSchema).max(20),
 }).superRefine((value, context) => {
   const cardIds = new Set(value.cards.map((card) => card.id));
   value.relations.forEach((relation, index) => {
@@ -67,7 +76,7 @@ export async function POST(request: Request) {
   const parsed = requestSchema.safeParse(await request.json());
   if (!parsed.success) return NextResponse.json({ error: "Invalid extraction request" }, { status: 400 });
 
-  const { taskId, locale, memo, messages } = parsed.data;
+  const { taskId, locale, memo, messages, actions } = parsed.data;
   const task = getResearchTask(taskId);
   const hasParticipantMemo = memo.trim() !== task.starterMemo[locale].trim();
   const hasParticipantMessage = messages.some((message) => message.role === "user" && message.text.trim().length > 0);
@@ -87,6 +96,11 @@ export async function POST(request: Request) {
 
   const evidencePack = task.materials.map((material) => `[${material.code}] ${material.excerpt[locale]}`).join("\n\n");
   const transcript = messages.map((message, index) => `${index + 1}. ${message.role}: ${message.text}`).join("\n");
+  const actionTrace = actions.map((action) => {
+    const target = [action.targetType, action.targetId].filter(Boolean).join(":");
+    const payload = Object.keys(action.payload).length ? ` ${JSON.stringify(action.payload)}` : "";
+    return `${action.sequenceNumber}. ${action.type}${target ? ` (${target})` : ""}${payload}`;
+  }).join("\n");
   const outputLanguage = locale === "zh-CN" ? "简体中文" : "English";
   const systemPrompt = `You extract a participant's prospective reasoning state immediately before an interruption.
 
@@ -95,16 +109,18 @@ Return JSON only, with this shape:
 
 Rules:
 - Write all card text in ${outputLanguage}.
-- Extract the participant's state from their memo and conversation. The five materials may only verify citations; do not insert a conclusion merely because it appears in a material.
+- Treat participant-authored memo and participant-AI conversation as the primary evidence of reasoning content.
+- Use the action trace only to infer attention, progress, sequence, and the last active step. Opening a material or checking a criterion never means the participant agrees with a claim.
+- The five materials may only verify citations; do not insert a conclusion merely because it appears in a material.
 - Never use or infer a hidden answer key. Do not label any framing as the strongest or correct one.
-- Include exactly one main goal, 2–4 active subgoals, 0–3 suspended goals, one uncertain hypothesis, one rejected path, and one minimum next action.
-- A rejected path may be status "expired" only when the participant explicitly rejected it. Otherwise write that no rejected path was reliably identified, set status "uncertain", and confidence at most 30.
-- If an uncertainty or next action is not explicit, say it was not reliably identified, set status "uncertain", and confidence at most 30.
-- Use short, specific cards. Cite sources such as "memo: 已排除的方向", "chat turn 4", or "材料 A4". Do not fabricate source locations.
+- Include exactly one main goal. Add only the subgoals, hypotheses, evidence, constraints, suspended goals, rejected paths, and next action that the participant trace supports.
+- Never create placeholder cards such as "not reliably identified" merely to fill a category. Omit unsupported categories instead.
+- A rejected path may be status "expired" only when the participant explicitly rejected it. A next action may be inferred from the last active step only when marked "uncertain" with confidence at most 40.
+- Use short, specific cards. Cite sources such as "memo: 已排除的方向", "chat turn 4", "action 12: material_opened", or "材料 A4". Do not fabricate source locations.
 - All candidates require participant calibration. Set the main goal and next action priority to "pinned"; others default to "normal".
 - Build the knowledge network only from the extracted cards. Do not create extra nodes.
 - Add relations only when the participant trace supports them. Use confidence at most 40 for inferred relations.
-- The network should make the participant's reasoning path legible: goal, competing hypotheses, evidence or constraints, rejected path, and minimum next action.
+- The network should show only relations supported by the participant trace; an empty relation list is valid.
 - Keep content concise: card content no more than 32 Chinese characters or 18 English words; detail no more than 70 Chinese characters or 45 English words.`;
 
   const userPrompt = `Task question:
@@ -115,6 +131,9 @@ ${memo || "(empty)"}
 
 Conversation:
 ${transcript || "(empty)"}
+
+Research action trace (progress signals only, not evidence of belief):
+${actionTrace || "(empty)"}
 
 Participant-visible evidence pack:
 ${evidencePack}`;
@@ -151,7 +170,7 @@ ${evidencePack}`;
       mode: "live",
       provider: "deepseek",
       model,
-      promptVersion: "rmw_state_and_network_extraction_v2",
+      promptVersion: "rmw_state_and_network_extraction_v3_trace_aware",
       cards: extraction.data.cards,
       relations: extraction.data.relations,
     });
